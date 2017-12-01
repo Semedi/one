@@ -423,20 +423,14 @@ class DatacenterFolder
 
             result.each do |it|
                 net = it.obj
-                if net.name == "multicluster_net" || net.name == "multicluster_swi-DVUplinks-3397"
-                    require 'pry'
-                    binding.pry
-                end
-
                 if net && (net.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup) || net.is_a?(RbVmomi::VIM::Network))
 
-                    begin
-                        network_clusters = VCenterDriver::Network.get_clusters(net)
-                        ccr_ref = network_clusters.first
-                        location = clusters[ccr_ref][:location]
-                    rescue
-                        next
-                    end
+                    network_clusters = VCenterDriver::Network.get_clusters(net)
+                    next if network_clusters.size == 0
+
+
+                    ccr_ref = network_clusters.first
+                    location = clusters[ccr_ref][:location]
 
                     if net.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup)
                         cluster_name = clusters[ccr_ref][:name]
