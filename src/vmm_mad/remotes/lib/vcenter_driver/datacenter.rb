@@ -336,6 +336,7 @@ class DatacenterFolder
 
 
     def get_unimported_networks(npool,vcenter_instance_name, hpool)
+
         network_objects = {}
         vcenter_uuid = get_vcenter_instance_uuid
         pc = @vi_client.vim.serviceContent.propertyCollector
@@ -366,7 +367,7 @@ class DatacenterFolder
                     ]
                 ],
                 :propSet => [
-                    { :type => 'ClusterComputeResource', :pathSet => ['name'] }
+                    { :type => 'ClusterComputeResource', :pathSet => ['name', 'network'] }
                 ]
             )
             result = pc.RetrieveProperties(:specSet => [filterSpec])
@@ -379,6 +380,7 @@ class DatacenterFolder
                 clusters[vref] = {}
                 clusters[vref][:name] = r.obj.name
                 clusters[vref][:location] = get_location(one_cluster)
+                clusters[vref][:networks] = Set.new(r.propSet.last.val)
 
                 one_host = VCenterDriver::VIHelper.find_by_ref(OpenNebula::HostPool,
                                                                "TEMPLATE/VCENTER_CCR_REF",
@@ -422,27 +424,31 @@ class DatacenterFolder
             result = pc.RetrieveProperties(:specSet => [filterSpec])
 
             result.each do |it|
+            t0 = Time.now
                 net = it.obj
+
+
                 if net && (net.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup) || net.is_a?(RbVmomi::VIM::Network))
 
-                    network_clusters = VCenterDriver::Network.get_clusters(net)
+                    network_clusters = []
+                    clusters.each { |ccr, info|
+                        network_clusters << ccr if info[:networks].include?(net)
+                    }
                     next if network_clusters.size == 0
-
-
-                    ccr_ref = network_clusters.first
-                    location = clusters[ccr_ref][:location]
-
-                    if net.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup)
-                        cluster_name = clusters[ccr_ref][:name]
-                        network_type = "Distributed Port Group"
-                    else
-                        cluster_name = clusters[ccr_ref][:name]
-                        network_type = "Port Group"
-
-                    end
 
                     network_ref  =  net._ref
                     network_name =  net.name
+
+                    ccr_ref = network_clusters.first
+                    location = clusters[ccr_ref][:location]
+                    cluster_name = clusters[ccr_ref][:name]
+
+                    if net.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup)
+                        network_type = "Distributed Port Group"
+                    else
+                        network_type = "Port Group"
+                    end
+
 
 
                     one_network = VCenterDriver::VIHelper.find_by_ref(OpenNebula::VirtualNetworkPool,
@@ -465,6 +471,7 @@ class DatacenterFolder
                                                                       location) #host location wtf
 
                     network_objects[dc_name] << one_vnet
+                    puts "time: #{(Time.now - t0)*1000}"
                 end
             end
             view.DestroyView # Destroy the view
