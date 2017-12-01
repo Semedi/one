@@ -91,6 +91,18 @@ class Network
         return id
     end
 
+    def self.get_clusters(network)
+        clusters = []
+        hosts = network.host
+
+        hosts.each { |host|
+            cluster = host.parent._ref
+            clusters << cluster
+        }
+
+        return clusters
+    end
+
     def self.to_one_template(network_name, network_ref, network_type,
                              ccr_ref, ccr_name, vcenter_uuid,
                              vcenter_instance_name, dc_name, cluster_id,

@@ -335,7 +335,6 @@ class DatacenterFolder
     end
 
 
-    require 'pry'
     def get_unimported_networks(npool,vcenter_instance_name, hpool)
         network_objects = {}
         vcenter_uuid = get_vcenter_instance_uuid
@@ -370,13 +369,11 @@ class DatacenterFolder
                     { :type => 'ClusterComputeResource', :pathSet => ['name'] }
                 ]
             )
-
             result = pc.RetrieveProperties(:specSet => [filterSpec])
 
             # Iterate over all clusters
             clusters = {}
             result.each do |r|
-                binding.pry
                 vref = r.obj._ref
                 one_cluster = VCenterDriver::ClusterComputeResource.new_from_ref(vref, @vi_client)
                 clusters[vref] = {}
@@ -394,50 +391,64 @@ class DatacenterFolder
                 else
                     clusters[vref][:one_id] = one_host['CLUSTER_ID']
                 end
-
-
-                clusters[r.obj._ref] = r.to_hash if r.obj.is_a?(RbVmomi::VIM::ClusterComputeResource)
-
-
-
             end
             view.DestroyView # Destroy the view
-            exit -1 
 
-            clusters.each do |ref, info|
+            #Get all port groups and distributed port groups in vcenter instance
+            view = @vi_client.vim.serviceContent.viewManager.CreateContainerView({
+                    container: @vi_client.vim.rootFolder,
+                    type:      ['Network','DistributedVirtualPortgroup'],
+                    recursive: true
+            })
 
-                binding.pry
-                end
+            filterSpec = RbVmomi::VIM.PropertyFilterSpec(
+                :objectSet => [
+                    :obj => view,
+                    :skip => true,
+                    :selectSet => [
+                    RbVmomi::VIM.TraversalSpec(
+                        :name => 'traverseEntities',
+                        :type => 'ContainerView',
+                        :path => 'view',
+                        :skip => false
+                    )
+                    ]
+                ],
+                :propSet => [
+                    { :type => 'Network', :pathSet => ['name'] },
+                    { :type => 'DistributedVirtualPortgroup', :pathSet => ['name'] }
+                ]
+            )
+            result = pc.RetrieveProperties(:specSet => [filterSpec])
 
-                one_cluster = VCenterDriver::ClusterComputeResource.new_from_ref(ref, @vi_client)
-
-                # Determine a host location
-                item = one_cluster.item
-                folders = []
-                while !item.instance_of? RbVmomi::VIM::Datacenter
-                    item = item.parent
-                    if !item.instance_of? RbVmomi::VIM::Datacenter
-                        folders << item.name if item.name != "host"
-                    end
-
-                    if item.nil?
-                        raise "Could not find the host's location"
-                    end
-                end
-
-                location = folders.reverse.join("/")
-                location = "/" if location.empty?
-
-                network_obj = info['network']
-                #binding.pry
-
-                network_obj.each do |n|
-                    next if n.name != "multicluster_net"
+            result.each do |it|
+                net = it.obj
+                if net.name == "multicluster_net" || net.name == "multicluster_swi-DVUplinks-3397"
+                    require 'pry'
                     binding.pry
-                    next
-                    network_ref  = n._ref
-                    network_name = networks[network_ref]['name']
-                    network_type = networks[network_ref][:network_type]
+                end
+
+                if net && (net.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup) || net.is_a?(RbVmomi::VIM::Network))
+
+                    begin
+                        network_clusters = VCenterDriver::Network.get_clusters(net)
+                        ccr_ref = network_clusters.first
+                        location = clusters[ccr_ref][:location]
+                    rescue
+                        next
+                    end
+
+                    if net.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup)
+                        cluster_name = clusters[ccr_ref][:name]
+                        network_type = "Distributed Port Group"
+                    else
+                        cluster_name = clusters[ccr_ref][:name]
+                        network_type = "Port Group"
+
+                    end
+
+                    network_ref  =  net._ref
+                    network_name =  net.name
 
 
                     one_network = VCenterDriver::VIHelper.find_by_ref(OpenNebula::VirtualNetworkPool,
@@ -451,77 +462,22 @@ class DatacenterFolder
                     one_vnet = VCenterDriver::Network.to_one_template(network_name,
                                                                       network_ref,
                                                                       network_type,
-                                                                      ref,
-                                                                      info['name'], # CLUSTERNAME
+                                                                      ccr_ref,
+                                                                      cluster_name, # CLUSTERNAME
                                                                       vcenter_uuid,
                                                                       vcenter_instance_name,
                                                                       dc_name,
-                                                                      cluster_id,
+                                                                      -1,
                                                                       location) #host location wtf
-
 
                     network_objects[dc_name] << one_vnet
                 end
+            end
+            view.DestroyView # Destroy the view
 
-            end # network loop
         end #datacenters loop
 
-
-
-#####################################################################################################################################################
-
-
-
-
-
-
-
-
-        #Get all port groups and distributed port groups in vcenter instance
-        view = @vi_client.vim.serviceContent.viewManager.CreateContainerView({
-                container: @vi_client.vim.rootFolder,
-                type:      ['Network','DistributedVirtualPortgroup'],
-                recursive: true
-        })
-
-        filterSpec = RbVmomi::VIM.PropertyFilterSpec(
-            :objectSet => [
-                :obj => view,
-                :skip => true,
-                :selectSet => [
-                RbVmomi::VIM.TraversalSpec(
-                    :name => 'traverseEntities',
-                    :type => 'ContainerView',
-                    :path => 'view',
-                    :skip => false
-                )
-                ]
-            ],
-            :propSet => [
-                { :type => 'Network', :pathSet => ['name'] },
-                { :type => 'DistributedVirtualPortgroup', :pathSet => ['name'] }
-            ]
-        )
-
-        result = pc.RetrieveProperties(:specSet => [filterSpec])
-
-        require 'pry'
-        networks = {}
-        result.each do |r|
-            if r.obj.name == "multicluster_net" || r.obj.name == "multicluster_swi-DVUplinks-3397"
-                binding.pry
-            end
-
-            networks[r.obj._ref] = r.to_hash if r.obj.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup) || r.obj.is_a?(RbVmomi::VIM::Network)
-            networks[r.obj._ref][:network_type] = r.obj.is_a?(RbVmomi::VIM::DistributedVirtualPortgroup) ? "Distributed Port Group" : "Port Group"
-        end
-
-        view.DestroyView # Destroy the view
-
-
-
         return network_objects
-
     end
 
 end # class DatatacenterFolder
