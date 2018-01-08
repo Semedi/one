@@ -345,8 +345,27 @@ class Template
 
     end
 
-    def import_vcenter_nics(vc_uuid, npool, hpool, vcenter_instance_name,
-                            template_ref, wild, sunstone=false, vm_name=nil, vm_id=nil, dc_name=nil)
+    REQUIRED_ATTRS = [:vc_uuid, :npool, :hpool, :vc_name, :_ref, :wild]
+    def import_vcenter_nics(opts = {})
+
+        # mandatory parameters:
+        REQUIRED_ATTRS.each do |attr|
+            raise "#{attr} required for importing nics operation!" if opts[attr].nil?
+        end
+
+        vc_uuid               = opts[:vc_uuid]
+        npool                 = opts[:npool]
+        hpool                 = opts[:npool]
+        vcenter_instance_name = opts[:vc_name]
+        template_ref          = opts[:_ref]
+        wild                  = opts[:wild]
+
+        # optional parameters and default values:
+        sunstone = opts[:sunstone] || false
+        vm_name  = opts[:name]     || nil
+        vm_id    = opts[:id]       || nil
+        dc_name  = opts[:dc_name]  || nil
+
         nic_info = ""
         error = ""
         sunstone_nic_info = []

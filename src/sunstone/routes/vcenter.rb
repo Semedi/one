@@ -335,16 +335,20 @@ get '/vcenter/template/:vcenter_ref/:template_id' do
 
         template_moref = template_copy_ref ? template_copy_ref : ref
 
+        opts = {
+            :vc_uuid  => vc_uuid,
+            :npool    => npool,
+            :hpool    => hpool,
+            :vc_name  => vcenter_client.vim.host,
+            :_ref     => template_moref,
+            :wild     => false,
+            :sunstone => true,
+            :name     => template["name"],
+            :id       => template_id
+        }
+
         # Create images or get nics information for template
-        error, template_nics = template.import_vcenter_nics(vc_uuid,
-                                                            npool,
-                                                            hpool,
-                                                            vcenter_client.vim.host,
-                                                            template_moref,
-                                                            false,
-                                                            true,
-                                                            template["name"],
-                                                            template_id)
+        error, template_nics = template.import_vcenter_nics(opts)
 
         raise error if !error.empty?
 

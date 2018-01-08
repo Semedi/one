@@ -39,16 +39,20 @@ def self.import_wild(host_id, vm_ref, one_vm, template)
 
         template << template_disks
 
+        opts = {
+            :vc_uuid => vc_uuid,
+            :npool   => npool,
+            :hpool   => hpool,
+            :vc_name => vc_name,
+            :_ref => vm_ref,
+            :wild => wild,
+            :sunstone => sunstone,
+            :name  => vm_name
+        }
+
         # Create images or get nics information for template
-        error, template_nics = vcenter_vm.import_vcenter_nics(vc_uuid,
-                                                              npool,
-                                                              hpool,
-                                                              vc_name,
-                                                              vm_ref,
-                                                              wild,
-                                                              sunstone,
-                                                              vm_name)
-        
+        error, template_nics = vcenter_vm.import_vcenter_nics(opts)
+
         return OpenNebula::Error.new(error) if !error.empty?
 
         template << template_nics
@@ -447,17 +451,19 @@ def self.import_templates(con_ops, options)
 
                 template_moref = template_copy_ref ? template_copy_ref : t[:vcenter_ref]
 
-                wild = false # We are not importing from a Wild VM
-                error, template_nics, allocated_nets = template.import_vcenter_nics(vc_uuid,
-                                                                                    npool,
-                                                                                    hpool,
-                                                                                    options[:vcenter],
-                                                                                    template_moref,
-                                                                                    wild,
-                                                                                    false,
-                                                                                    template["name"],
-                                                                                    one_t["ID"],
-                                                                                    dc)
+                opts = {
+                    :vc_uuid  => vc_uuid,
+                    :npool    => npool,
+                    :hpool    => hpool,
+                    :vc_name  => options[:vcenter],
+                    :_ref     => template_moref,
+                    :wild     => false,
+                    :sunstone => false,
+                    :name     => template["name"],
+                    :id       => one_t["ID"],
+                    :dc_name  => dc
+                }
+                error, template_nics, allocated_nets = template.import_vcenter_nics(opts)
 
                 if error.empty?
                     t[:one] << template_nics
