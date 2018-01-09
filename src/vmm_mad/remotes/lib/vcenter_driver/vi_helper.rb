@@ -109,6 +109,60 @@ class VIHelper
         return nil
     end
 
+    def self.check_conditions(object, table_conds)
+        res = true
+
+        unless table_conds.nil?
+            table_conds.each do |cond, value|
+                res = res && (object[cond] == value)
+                break if !res
+            end
+        end
+
+        return !res
+    end
+
+    def self.create_one_hash(opts)
+        hash = {}
+
+        attribute = opts[:att]
+        pool      = opts[:pool]
+
+        pool.each_element(Proc.new do |e|
+            next if check_conditions(e, opts[:cond_map])
+
+            ref = e[attribute]
+            hash[ref] = e
+        end)
+
+        hash
+    end
+
+
+    REQUIRED_ATTRS = [:att, :_ref, :pool]
+    def self.find_one_object(opts = {})
+
+        # mandatory parameters:
+        REQUIRED_ATTRS.each do |attr|
+            raise "#{attr} required for importing nics operation!" if opts[attr].nil?
+        end
+
+        attribute = opts[:att]
+        ref       = opts[:_ref]
+
+        # optnional parameters:
+        cond_map = opts[:cond_map] || nil
+
+        @ref_hash ||= {}
+        if @ref_hash[cond_map].nil? || @ref_hash[cond_map] == {}
+            @ref_hash[cond_map] = create_one_hash(opts)
+        end
+
+        e = @ref_hash[cond_map][ref]
+
+        return e
+    end
+
     def self.find_image_by(att, the_class, path, ds_id, pool = nil)
         pool = one_pool(the_class, false) if pool.nil?
         element = pool.find{|e|

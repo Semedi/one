@@ -9,6 +9,7 @@ class VIClient
     def initialize(opts)
         opts = {:insecure => true}.merge(opts)
         @vim = RbVmomi::VIM.connect(opts)
+        @ccr = opts[:ccr] if opts[:ccr]
 
         # Get ccr and get rp
         ccr_ref = opts.delete(:ccr)
@@ -66,6 +67,11 @@ class VIClient
     def close_connection
         @vim.close
     end
+
+    def ccr_ref
+        @ccr
+    end
+
 
     # @return RbVmomi::VIM::<type> objects
     def self.get_entities(folder, type, entities=[])

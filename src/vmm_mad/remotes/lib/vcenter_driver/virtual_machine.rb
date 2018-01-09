@@ -392,6 +392,18 @@ class Template
             duplicated_networks = []
 
             vc_nics.each do |nic|
+
+                find_opts = {
+                    :pool => npool,
+                    :_ref => nic[:net_ref],
+                    :att  => "TEMPLATE/VCENTER_NET_REF",
+                }
+                find_opts[:cond_map] = {
+                    "TEMPLATE/VCENTER_INSTANCE_ID"=>vc_uuid
+                }
+                found = VCenterDriver::VIHelper.find_one_object(find_opts)
+
+
                 # Check if the network already exists
                 network_found = VCenterDriver::VIHelper.find_by_ref(OpenNebula::VirtualNetworkPool,
                                                                 "TEMPLATE/VCENTER_NET_REF",
