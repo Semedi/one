@@ -15,6 +15,10 @@ module AzDriver
             end
         end
 
+        def delete_nic(nic_name)
+            @client.network_interfaces.delete(@group_name, nic_name)
+        end
+
         def retrieve_nics(vm)
             if @nics[vm]
                 @nics[vm]

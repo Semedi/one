@@ -32,49 +32,70 @@ require 'az_driver'
 dfile = ARGV[0]
 host  = ARGV[1]
 id    = ARGV[2]
-
 # command example
 # /var/lib/one/remotes/vmm/az/deploy '/var/lib/one/vms/125/deployment.0' 'azure00' 125 azure00
 # /var/lib/one/remotes/vmm/az/deploy '/var/lib/one/vms/123/deployment.0' 'azure00' 123 azure00
 
 begin
+
+    # one objects accesing
     one_client = OpenNebula::Client.new
+    vm_one = OpenNebula::VirtualMachine.new_with_id(id, one_client)
+    vm_one.info
+
     pool = OpenNebula::HostPool.new(one_client)
     pool.info
 
     host_id = pool["/HOST_POOL/HOST[NAME='#{host}']/ID"].to_i
     location = pool["/HOST_POOL/HOST[NAME='#{host}']/TEMPLATE/REGION_NAME"].to_s
 
-    xml=File.read(dfile)
+    lcm_state = vm_one.lcm_state_str
 
-    # deployment info:
-    dinfo = AzDriver.get_deployment_info(host, xml, location)
-
-    #vm = OpenNebula::VirtualMachine.new_with_id(id, OpenNebula::Client.new)
-    #vm.info
-
+    # azure auth
     opts_credentials = AzDriver.host_credentials_with_id(host_id)
     client = AzDriver::Client.new(opts_credentials)
 
-    opts_new = {
-        client: client,
-        region: location,
-        gname:  host
-    }
+    if lcm_state == "BOOT" || lcm_state == "BOOT_FAILURE"
 
-    rgroup= AzDriver::ResourceGroup.new(opts_new)
-    network = AzDriver::Network.new(opts_new).tap do |net|
-        net.az_item = rgroup.create_net()
-    end
+        xml=File.read(dfile)
 
-    vm_name = "one-#{id}"
-    opts_new[:name] = vm_name
-    nic_name = "nic-#{vm_name}"
+        # deployment info:
+        dinfo = AzDriver.get_deployment_info(host, xml, location)
 
-    unless rgroup.exist_object?(opts_new[:name])
-        vm = AzDriver::VirtualMachine.new(opts_new).tap do |az_vm|
-            nic = network.create_nic(nic_name)
-            az_vm.az_item = rgroup.create_vm(dinfo, az_vm.name, nic)
+        #vm = OpenNebula::VirtualMachine.new_with_id(id, OpenNebula::Client.new)
+        #vm.info
+
+        opts_new = {
+            client: client,
+            region: location,
+            gname:  host
+        }
+
+        rgroup= AzDriver::ResourceGroup.new(opts_new)
+        network = AzDriver::Network.new(opts_new).tap do |net|
+            net.az_item = rgroup.create_net()
+        end
+
+        vm_name = "one-#{id}"
+        opts_new[:name] = vm_name
+        nic_name = "nic-#{vm_name}"
+
+        unless rgroup.exist_object?(opts_new[:name])
+            vm = AzDriver::VirtualMachine.new(opts_new).tap do |az_vm|
+                nic = network.create_nic(nic_name)
+                az_vm.az_item = rgroup.create_vm(dinfo, az_vm.name, nic)
+            end
+        end
+    else
+        vm_name = vm_one["DEPLOY_ID"]
+        opts = {
+            client: client,
+            name: vm_name,
+            gname:  host
+        }
+
+        vm = AzDriver::VirtualMachine.new(opts).tap do |az_vm|
+            az_vm.start
         end
     end
 

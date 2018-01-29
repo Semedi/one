@@ -33,22 +33,30 @@ deploy_id = ARGV[0]
 file      = ARGV[1]
 host      = ARGV[2]
 
+
 begin
-    #id = deploy_id.match(/([^_]+)-(.+)/)[-1]
-    #vm = OpenNebula::VirtualMachine.new_with_id(id, OpenNebula::Client.new)
-    #vm.info
-    #
     opts_credentials = AzDriver.host_credentials_with_name(host)
     client = AzDriver::Client.new(opts_credentials)
+    one_id = deploy_id.split('-').last
 
-    opts = {
-        gname: host,
-        name: deploy_id,
-        client: client
-    }
+    one_client = OpenNebula::Client.new
+    vm_one = OpenNebula::VirtualMachine.new_with_id(one_id, one_client)
+    vm_one.info
 
-    az_vm = AzDriver::VirtualMachine.new(opts).tap do |vm|
-        vm.stop
+    lcm_state = vm_one.lcm_state_str
+
+    if lcm_state == "SAVE_SUSPEND"
+        opts = {
+            gname: host,
+            name: deploy_id,
+            client: client
+        }
+
+        az_vm = AzDriver::VirtualMachine.new(opts).tap do |vm|
+            vm.stop
+        end
+    elsif lcm_state == "SAVE_STOP"
+        raise "not supported"
     end
 rescue => e
     OpenNebula.handle_driver_exception("Save", e, host, deploy_id, nil, file)

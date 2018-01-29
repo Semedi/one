@@ -34,8 +34,28 @@ host      = ARGV[1]
 
 
 begin
-    az_drv = AzureDriver.new(host)
-    az_drv.cancel(deploy_id)
+    opts_credentials = AzDriver.host_credentials_with_name(host)
+    client = AzDriver::Client.new(opts_credentials)
+
+    opts = {
+        gname: host,
+        name: deploy_id,
+        client: client
+    }
+
+    az_vm = AzDriver::VirtualMachine.new(opts).tap do |vm|
+        vm.get
+    end
+    nics = az_vm.nics
+
+    az_net = AzDriver::Network.new(opts)
+    disk = az_vm.diskname
+
+    az_vm.delete
+    az_vm.delete_disk(disk)
+    nics.each do |nic|
+        az_net.delete_nic(nic)
+    end
 rescue => e
     OpenNebula.handle_driver_exception("Cancel", e, host, deploy_id)
 end

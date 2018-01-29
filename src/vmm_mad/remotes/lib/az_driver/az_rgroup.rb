@@ -20,11 +20,6 @@ module AzDriver
             @client.resource.deployments.check_existence(@name, object)
         end
 
-
-        def get_object(object)
-        end
-
-
         # create the azure remote resource group
         def create()
             model = AzDriver::Client::ResourceModels
@@ -165,7 +160,6 @@ module AzDriver
 
                             # monitoring vm info:
                             i.info
-                            next if i.status.nil?
 
                             poll_data = parse_poll(i)
 
@@ -222,7 +216,9 @@ module AzDriver
 
                 state = ""
                 if !instance
-                    state = VM_STATE[:deleted]
+                    state = AzureDriver::VM_STATE[:deleted]
+                elsif  instance.failed? || instance.status.nil?
+                    state = AzureDriver::VM_STATE[:unknown]
                 else
                     state = case instance.status.code.split("/").last
                     when "running", "starting"

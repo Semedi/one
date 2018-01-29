@@ -22,6 +22,12 @@ module AzDriver
             @az_item = @client.virtual_machines.get(@group_name, @name , expand)
         end
 
+        def failed?()
+            if @az_item
+                @az_item.provisioning_state == "Failed"
+            end
+        end
+
         def size()
             if @az_item
                 @az_item.hardware_profile.vm_size
@@ -31,6 +37,14 @@ module AzDriver
         def diskname()
             if @az_item
                 os_disk = @az_item.storage_profile.os_disk.name
+            end
+        end
+
+        def nics()
+            if @az_item
+                @az_item.network_profile.network_interfaces.map do |nic|
+                    nic.id.split("/").last
+                end
             end
         end
 
@@ -45,6 +59,11 @@ module AzDriver
             }
         end
 
+        def delete_disk(name)
+            @client.disks.delete(@group_name, name)
+
+        end
+
         def used_resources()
             @one[:hw] unless @one[:hw].nil?
         end
@@ -54,7 +73,7 @@ module AzDriver
         end
 
         def info()
-            view = @client.virtual_machines.instance_view(@group_name, name)
+            view = @client.virtual_machines.instance_view(@group_name, @name)
             @status = view.statuses[1]
         end
 

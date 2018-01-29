@@ -35,8 +35,18 @@ deploy_id       = ARGV[2]
 
 
 begin
-    az_drv = AzureDriver.new(host)
-    az_drv.restore(deploy_id)
+    opts_credentials = AzDriver.host_credentials_with_name(host)
+    client = AzDriver::Client.new(opts_credentials)
+
+    opts = {
+        gname: host,
+        name: deploy_id,
+        client: client
+    }
+
+    az_vm = AzDriver::VirtualMachine.new(opts).tap do |vm|
+        vm.start
+    end
 rescue => e
     OpenNebula.handle_driver_exception("Restore", e, host, deploy_id)
 end
