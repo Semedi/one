@@ -16,6 +16,8 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
+exit -1
+
 ONE_LOCATION=ENV["ONE_LOCATION"]
 
 if !ONE_LOCATION
@@ -44,17 +46,18 @@ begin
     # Step 0. Only execute for vcenter network driver
     if template["VN_MAD"] == "vcenter" && managed && !error
         # Step 1. Extract vnet settings
-        host_id =  template["TEMPLATE/VCENTER_ONE_HOST_ID"]
-        raise "We require the ID of the OpenNebula host representing a vCenter cluster" if !host_id
+        host_ids = template.retrieve_elements("TEMPLATE/VCENTER_ONE_HOST_ID").map { |id| id.to_i}
+        raise "We require the ID of the OpenNebula host representing a vCenter cluster" if !host_ids
 
         pg_name   =  template["TEMPLATE/BRIDGE"]
         pg_type   =  template["TEMPLATE/VCENTER_PORTGROUP_TYPE"]
         sw_name   =  template["TEMPLATE/VCENTER_SWITCH_NAME"]
 
         # Step 2. Contact cluster and extract cluster's info
-        vi_client  = VCenterDriver::VIClient.new_from_host(host_id)
         one_client = OpenNebula::Client.new
-        one_host   = OpenNebula::Host.new_with_id(host_id, one_client)
+        vi_client  = VCenterDriver::VIClient.new_from_host(host_ids.first)
+
+        one_host   = OpenNebula::Host.new_with_id(host_ids.first, one_client)
         rc         = one_host.info
         raise rc.message if OpenNebula::is_error? rc
 

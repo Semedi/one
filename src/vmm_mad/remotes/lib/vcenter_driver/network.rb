@@ -166,25 +166,38 @@ class Network
         end
 
         one_vn = VCenterDriver::VIHelper.new_one_item(OpenNebula::VirtualNetwork)
+        rc = one_vn.allocate(net_config[:one_object])
+        VCenterDriver::VIHelper.check_error(rc, "create network")
+        one_vn.info
 
         done = []
         for i in 0..net_config[:refs].size-1
             cl_id = net_config[:one_ids][i]
             next if cl_id == -1 || done.include?(cl_id)
 
-            if done.empty?
-                rc = one_vn.allocate(net_config[:one_object],cl_id.to_i)
-                VCenterDriver::VIHelper.check_error(rc, "create network")
-                one_vn.info
-            else
-                one_cluster = VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, cl_id, false)
-                rc = one_cluster.addvnet(one_vn['ID'].to_i)
-                VCenterDriver::VIHelper.check_error(rc,"addvnet to cluster")
-            end
+            one_cluster = VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, cl_id, false)
+            rc = one_cluster.addvnet(one_vn['ID'].to_i)
+            VCenterDriver::VIHelper.check_error(rc,"addvnet to cluster")
             done << cl_id
         end
 
         one_vn
+    end
+
+    def self.add_to_clusters(net_id, clusters_ids)
+        done = []
+        clusters_ids.each do |cl_id|
+            next if cl_id == -1 || done.include?(cl_id)
+
+            one_cluster = VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, cl_id, false)
+            rc = one_cluster.addvnet(net_id)
+            VCenterDriver::VIHelper.check_error(rc,"addvnet to cluster")
+            done << cl_id
+        end
+
+        default_cluster = VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, "0", false)
+        rc = default_cluster.delvnet(net_id)
+        VCenterDriver::VIHelper.check_error(rc,"retrieve default cluster and delete the net")
     end
 
     def self.get_network_type(device)

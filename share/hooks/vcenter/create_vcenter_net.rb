@@ -66,9 +66,10 @@ begin
     # Step 0. Only execute for vcenter network driver && managed by one
     if template["VN_MAD"] == "vcenter" && managed
         wait_vlanid(template) if template["VLAN_ID_AUTOMATIC"] == '1'
+
         # Step 1. Extract vnet settings
-        host_id =  template["TEMPLATE/VCENTER_ONE_HOST_ID"]
-        raise "We require the ID of the OpenNebula host representing a vCenter cluster" if !host_id
+        host_ids = template.retrieve_elements("TEMPLATE/VCENTER_ONE_HOST_ID").map { |id| id.to_i}
+        raise "We require the ID of the OpenNebula host representing a vCenter cluster" if !host_ids
 
         pnics     =  template["TEMPLATE/PHYDEV"]
         pg_name   =  template["TEMPLATE/BRIDGE"]
@@ -83,144 +84,145 @@ begin
             nports  = pg_type == "Port Group" ? 128 : 8
         end
 
-        # Step 2. Contact cluster and extract cluster's info
-        vi_client  = VCenterDriver::VIClient.new_from_host(host_id)
-        vc_uuid    = vi_client.vim.serviceContent.about.instanceUuid
+        # Step 2. Contact cluster and extract cluster's info for all the hosts
+        vcenter = {}
+        vi_client = nil
+        vc_uuid = nil
+        samevc = true
         one_client = OpenNebula::Client.new
-        one_host   = OpenNebula::Host.new_with_id(host_id, one_client)
-        rc         = one_host.info
-        raise rc.message if OpenNebula::is_error? rc
+        host_ids.each do |one_id|
+            vi_client  = VCenterDriver::VIClient.new_from_host(one_id) unless vi_client
+            vc_uuid    = vi_client.vim.serviceContent.about.instanceUuid
 
-        vnet_ref = nil
-        ccr_ref = one_host["TEMPLATE/VCENTER_CCR_REF"]
-        cluster = VCenterDriver::ClusterComputeResource.new_from_ref(ccr_ref, vi_client)
-        dc = cluster.get_dc
-
-        # With DVS we have to work at datacenter level and then for each host
-        if pg_type == "Distributed Port Group"
-            begin
-                dc.lock
-                net_folder = dc.network_folder
-                net_folder.fetch!
-
-                # Get distributed port group if it exists
-                dpg = dc.dpg_exists(pg_name, net_folder)
-
-                # Disallow changes of switch name for existing pg
-                if dpg && dc.pg_changes_sw?(dpg, sw_name)
-                    raise "The port group's switch name can not be modified"\
-                          " for OpenNebula's virtual network."
-                end
-
-                if !dpg
-                    # Get distributed virtual switch if it exists
-                    dvs = dc.dvs_exists(sw_name, net_folder)
-
-                    if !dvs
-                        dvs = dc.create_dvs(sw_name, pnics, mtu)
-                    end
-
-                    vnet_ref = dc.create_dpg(dvs, pg_name, vlan_id, nports)
-                end
-            rescue Exception => e
-                raise e
-            ensure
-                dc.unlock if dc
+            # check that all the hosts belong to the same vcenter instance
+            if defined? last_vcid
+                message = "OpenNebula hosts must belong to same vcenter instance"
+                samevc  = samevc && (last_vcid == vc_uuid)
+                raise message unless samevc
             end
+
+            one_host   = OpenNebula::Host.new_with_id(one_id, one_client)
+            rc         = one_host.info
+            raise rc.message if OpenNebula::is_error? rc
+
+            ccr = one_host["TEMPLATE/VCENTER_CCR_REF"]
+            # recovever hosts_info
+            vcenter[ccr]        = {} unless vcenter[ccr]
+            vcenter[ccr][:cid]    = one_host["CLUSTER_ID"]
+            last_vcid = vc_uuid
         end
 
-        cluster["host"].each do |host|
+        # we need to iterate every cluster
+        vnet_ref = nil
+        dc = nil
 
-            # Step 3. Loop through hosts in clusters
-            esx_host = VCenterDriver::ESXHost.new_from_ref(host._ref, vi_client)
+        # virtual switch and port group
+        dvs = nil
+        dpg = nil
 
-            if pg_type == "Port Group"
+        create = true
+        vcenter.keys.each do |ccr_ref|
+            cluster = VCenterDriver::ClusterComputeResource.new_from_ref(ccr_ref, vi_client)
+
+            # With DVS we have to work at datacenter level and then for each host
+            # we only execute this one time
+            if  create && pg_type == "Distributed Port Group"
+                dc = cluster.get_dc
                 begin
-                    esx_host.lock # Exclusive lock for ESX host operation
+                    dc.lock
+                    net_folder = dc.network_folder
+                    net_folder.fetch!
 
-                    pnics_available = nil
-                    pnics_available = esx_host.get_available_pnics if pnics
-
-                    # Get port group if it exists
-                    pg = esx_host.pg_exists(pg_name)
+                    # Get distributed port group if it exists
+                    dpg = dc.dpg_exists(pg_name, net_folder)
 
                     # Disallow changes of switch name for existing pg
-                    if pg && esx_host.pg_changes_sw?(pg, switch_name)
-                        raise "The port group already exists in this host "\
-                              " for a different vCenter standard switch and this kind of "
-                              " change is not supported."
+                    if dpg && dc.pg_changes_sw?(dpg, sw_name)
+                        raise "The port group's switch name can not be modified"\
+                              " for OpenNebula's virtual network."
                     end
 
-                    # Pg does not exits
-                    if !pg
-                        # Get standard switch if it exists
-                        vs = esx_host.vss_exists(sw_name)
-
-                        if !vs
-                            sw_name = esx_host.create_vss(sw_name, pnics, nports, mtu, pnics_available)
+                    # Get distributed virtual switch if it exists
+                    dvs = dc.dvs_exists(sw_name, net_folder)
+                    if !dpg
+                        if !dvs
+                            dvs = dc.create_dvs(sw_name, pnics, mtu)
                         end
 
-                        vnet_ref = esx_host.create_pg(pg_name, sw_name, vlan_id)
+                        vnet_ref = dc.create_dpg(dvs, pg_name, vlan_id, nports)
                     end
-
                 rescue Exception => e
                     raise e
                 ensure
-                    esx_rollback << esx_host
-                    esx_host.unlock if esx_host # Remove lock
+                    dc.unlock if dc
+                    create = false
                 end
             end
 
-            if pg_type == "Distributed Port Group"
-                begin
-                    esx_host.lock
-                    pnics_available = nil
-                    pnics_available = esx_host.get_available_pnics if pnics && !pnics.empty?
-                    esx_host.assign_proxy_switch(dvs, sw_name, pnics, pnics_available)
-                rescue Exception => e
-                    raise e
-                ensure
-                    esx_host.unlock if esx_host
+            # Step 3. Loop through hosts in clusters
+            cluster["host"].each do |host|
+
+                esx_host = VCenterDriver::ESXHost.new_from_ref(host._ref, vi_client)
+                if pg_type == "Port Group"
+                    begin
+                        esx_host.lock # Exclusive lock for ESX host operation
+
+                        pnics_available = nil
+                        pnics_available = esx_host.get_available_pnics if pnics
+
+                        # Get port group if it exists
+                        pg = esx_host.pg_exists(pg_name)
+
+                        # Disallow changes of switch name for existing pg
+                        if pg && esx_host.pg_changes_sw?(pg, switch_name)
+                            raise "The port group already exists in this host "\
+                                  " for a different vCenter standard switch and this kind of "
+                                  " change is not supported."
+                        end
+
+                        # Pg does not exits
+                        if !pg
+                            # Get standard switch if it exists
+                            vs = esx_host.vss_exists(sw_name)
+
+                            if !vs
+                                sw_name = esx_host.create_vss(sw_name, pnics, nports, mtu, pnics_available)
+                            end
+
+                            vnet_ref = esx_host.create_pg(pg_name, sw_name, vlan_id)
+                        end
+
+                    rescue Exception => e
+                        raise e
+                    ensure
+                        esx_rollback << esx_host
+                        esx_host.unlock if esx_host # Remove lock
+                    end
                 end
-            end
-        end
 
+                if pg_type == "Distributed Port Group"
+                    begin
+                            esx_host.lock
+                        if !dpg
+                            pnics_available = nil
+                            pnics_available = esx_host.get_available_pnics if pnics && !pnics.empty?
+                            esx_host.assign_proxy_switch(dvs, sw_name, pnics, pnics_available)
+                        end
+                    rescue Exception => e
+                        raise e
+                    ensure
+                        esx_host.unlock if esx_host
+                    end
+                end
 
-        # We must update XML so the VCENTER_NET_REF and VCENTER_INSTANCE_ID are added
+            end # hosts from cluster
+        end # vcenter instance
+
         one_vnet = VCenterDriver::VIHelper.one_item(OpenNebula::VirtualNetwork, network_id, false)
-
+        one_vnet.info
         rc = one_vnet.update("VCENTER_NET_REF=\"#{vnet_ref}\"\nVCENTER_INSTANCE_ID=\"#{vc_uuid}\"\nVCENTER_NET_STATE=\"READY\"\nVCENTER_NET_ERROR=\"\"\n", true)
-
-        if OpenNebula.is_error?(rc)
-            raise "Could not update VCENTER_NET_REF and VCENTER_INSTANCE_ID for virtual network"
-        end
-
-
-        # Assign vnet to OpenNebula cluster
-        cluster_id = one_host["CLUSTER_ID"]
-        if cluster_id
-            one_cluster = VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, cluster_id, false)
-            if OpenNebula.is_error?(one_cluster)
-                STDOUT.puts "Error retrieving cluster #{cluster_id}: #{rc.message}. You may have to place this vnet in the right cluster by hand"
-            end
-
-            rc = one_cluster.addvnet(network_id.to_i)
-            if OpenNebula.is_error?(rc)
-                STDOUT.puts "Error adding vnet #{network_id} to OpenNebula cluster #{cluster_id}: #{rc.message}. You may have to place this vnet in the right cluster by hand"
-            end
-
-            default_cluster = VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, "0", false)
-            if OpenNebula.is_error?(default_cluster)
-                STDOUT.puts "Error retrieving default cluster: #{rc.message}."
-            end
-
-            rc = default_cluster.delvnet(network_id.to_i)
-            if OpenNebula.is_error?(rc)
-                STDOUT.puts "Error removing vnet #{network_id} from default OpenNebula cluster: #{rc.message}."
-            end
-        end
+        VCenterDriver::Network.add_to_clusters(one_vnet['ID'].to_i, vcenter.keys.map {|c| vcenter[c][:cid]})
     end
-
 rescue Exception => e
     STDERR.puts("#{e.message}/#{e.backtrace}")
 
@@ -246,9 +248,9 @@ rescue Exception => e
         end
     end
 
-    one_vnet = VCenterDriver::VIHelper.one_item(OpenNebula::VirtualNetwork, network_id, false)
-
-    rc = one_vnet.update("VCENTER_NET_STATE=\"ERROR\"\nVCENTER_NET_ERROR=\"#{e.message}\"\n", true)
+    if one_vnet
+        rc = one_vnet.update("VCENTER_NET_STATE=\"ERROR\"\nVCENTER_NET_ERROR=\"#{e.message}\"\n", true)
+    end
 
     if OpenNebula.is_error?(rc)
         raise "Could not update VCENTER_NET_REF and VCENTER_INSTANCE_ID for virtual network"
