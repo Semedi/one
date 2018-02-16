@@ -145,6 +145,7 @@ module OpenNebula
             }
         end
 
+        # Update the content of the current doc
         def set_content(content)
             if NOKOGIRI
                 @xml.content = content
