@@ -162,6 +162,27 @@ module OpenNebula
                 other_m, other_a)
         end
 
+        # Replace the xml pointed by xpath using  a Hash object
+        # one object will be modified taking hash object pairs
+        #
+        # @param [String] xpath
+        # @param [Hash] options object containing pair key-value
+        #
+        # @returns the new xml representation
+        def replace(xpath, opts)
+            if self[xpath]
+                opts.each do |att, value|
+                    xpath_u = xpath+"/#{att}"
+                    if self[xpath_u]
+                        delete_element(xpath_u)
+                        add_element(xpath, {att => value})
+                    end
+                end
+
+                xml = retrieve_xmlelements(xpath).first
+            end
+        end
+
         # Calls to the corresponding chmod method to modify
         # the object's permission bits
         # Each [Integer] parameter must be 1 to allow, 0 deny, -1 do not change

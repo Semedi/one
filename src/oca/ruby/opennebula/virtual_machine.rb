@@ -325,6 +325,10 @@ module OpenNebula
             end
         end
 
+        def replace(opts = {})
+            super("USER_TEMPLATE", opts)
+            update(user_template_str)
+        end
 
         # Initiates the instance of the VM on the target host.
         #
