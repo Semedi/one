@@ -145,6 +145,14 @@ module OpenNebula
             }
         end
 
+        def set_content(content)
+            if NOKOGIRI
+                @xml.content = content
+            else
+                @xml.text = content
+            end
+        end
+
         # Gets an array of text from elements extracted
         # using  the XPATH  expression passed as filter
         def retrieve_elements(filter)

@@ -173,13 +173,11 @@ module OpenNebula
             if self[xpath]
                 opts.each do |att, value|
                     xpath_u = xpath+"/#{att}"
-                    if self[xpath_u]
-                        delete_element(xpath_u)
-                        add_element(xpath, {att => value})
+                    docs = retrieve_xmlelements(xpath_u)
+                    if docs.size == 1
+                        docs[0].set_content(value)
                     end
                 end
-
-                xml = retrieve_xmlelements(xpath).first
             end
         end
 
