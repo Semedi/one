@@ -121,7 +121,8 @@ class DatacenterFolder
 
     def get_unimported_datastores(dpool, vcenter_instance_name, hpool)
 
-        ds_objects = {}
+        import_id = 0
+        ds_objects = []
         vcenter_uuid = get_vcenter_instance_uuid
 
         fetch! if @items.empty? #Get datacenters
@@ -130,7 +131,6 @@ class DatacenterFolder
             clusters_in_ds = {}
             dc_name = dc.item.name
             dc_ref  = dc.item._ref
-            ds_objects[dc_name] = []
 
             datastore_folder = dc.datastore_folder
             datastore_folder.fetch!
@@ -145,8 +145,13 @@ class DatacenterFolder
                 ds_total_mb = ((capacity.to_i / 1024) / 1024)
                 ds_free_mb  = ((freeSpace.to_i / 1024) / 1024)
 
+                ds_hash = {}
+                ds_hash[:import_id]  = import_id
+                ds_hash[:datacenter] = dc_name
+                ds_hash[:vcenter]    = vcenter_instance_name
+                ds_hash[:ref]        = ds['_ref']
+
                 if ds.instance_of? VCenterDriver::Datastore
-                    ds_hash = {}
                     ds_hash[:simple_name] = "#{ds_name}"
                     ds_hash[:total_mb]    = ds_total_mb
                     ds_hash[:free_mb]     = ds_free_mb
@@ -191,12 +196,9 @@ class DatacenterFolder
 
                     ds_hash[:name] = "#{ds_name} [#{vcenter_instance_name} - #{dc_name}]"
 
-                    ds_objects[dc_name] << ds_hash if !ds_hash[:ds].empty?
+                    ds_objects << ds_hash if !ds_hash[:ds].empty?
 
-                end
-
-                if ds.instance_of? VCenterDriver::StoragePod
-                    ds_hash = {}
+                elsif ds.instance_of? VCenterDriver::StoragePod
                     ds_hash[:simple_name] = "#{ds_name}"
                     ds_hash[:total_mb] = ds_total_mb
                     ds_hash[:free_mb]  = ds_free_mb
@@ -233,8 +235,10 @@ class DatacenterFolder
                         ds_hash[:ds] << object if !object.nil?
                     end
 
-                    ds_objects[dc_name] << ds_hash if !ds_hash[:ds].empty?
+                    ds_objects << ds_hash if !ds_hash[:ds].empty?
                 end
+
+                import_id += 1
             end
         end
         ds_objects

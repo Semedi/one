@@ -5,10 +5,12 @@ module VCenterDriver
 class VIClient
     attr_accessor :vim
     attr_accessor :rp
+    attr_accessor  :vc_name
 
     def initialize(opts)
         opts = {:insecure => true}.merge(opts)
         @vim = RbVmomi::VIM.connect(opts)
+        @vc_name = opts[:host] if opts[:host]
 
         # Get ccr and get rp
         ccr_ref = opts.delete(:ccr)
