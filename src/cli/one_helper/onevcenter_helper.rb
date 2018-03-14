@@ -38,10 +38,11 @@ class OneVcenterHelper < OpenNebulaHelper::OneHelper
 
     TABLE = {
         "datastores" => ["DATASTORE_LIST", "DATASTORE"],
-        "networks" => ["NETWORK_LIST", "NETWORK"]
+        "networks" => ["NETWORK_LIST", "NETWORK"],
+        "templates" => ["TEMPLATE_LIST", "TEMPLATE"]
     }
     def cli_format(o, hash)
-        {TABLE[o].first => {TABLE[o].last => hash}}
+        {TABLE[o].first => {TABLE[o].last => hash.values}}
     end
 
     def list_object(options, list)

@@ -46,14 +46,9 @@ module VCenterDriver
                 @list == {}
             end
 
-            def retrieve_with_ref(ref)
-                element = nil
+            def get_element(ref)
                 raise "the list is empty" if list_empty?
-                @list.each do |e|
-                    element = e if e[:ref] == ref
-                end
-
-                element
+                @list[ref] if @list[ref]
             end
 
             def add_clusters(one_id, clusters, &block)

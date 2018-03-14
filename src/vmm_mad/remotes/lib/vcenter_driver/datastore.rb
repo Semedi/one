@@ -702,9 +702,11 @@ class DsImporter < VCenterDriver::VcImporter
         raise "the list is empty" if list_empty?
         indexes.each do |index|
             # select a datastore from the list
-            selected = retrieve_with_ref(index)
+            selected = get_element(index)
+
             # Datastore info comes in a pair (SYS, IMG)
             inner.call(selected[:ds], selected[:cluster])
+
         end
     end
 
