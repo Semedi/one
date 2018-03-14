@@ -21,6 +21,16 @@ module VCenterDriver
             end
         end
 
+        def process_import(indexes)
+            raise "the list is empty" if list_empty?
+            indexes.each do |index|
+                # select object from importer mem
+                selected = get_element(index)
+
+                import(selected)
+            end
+        end
+
         protected
         ####################
         # ABSTRACT INTERFACE
@@ -31,7 +41,7 @@ module VCenterDriver
             def get_list;    raise MESS end
             def add_cluster(cid, eid) raise MESS end
             def remove_default(id) raise MESS end
-            def import(indexes) raise MESS end
+            def import(selected) raise MESS end
 
         ###############
 
@@ -59,6 +69,5 @@ module VCenterDriver
                 end
                 remove_default(one_id)
             end
-
     end
 end

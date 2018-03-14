@@ -687,26 +687,29 @@ class DsImporter < VCenterDriver::VcImporter
         @clusters[cid].deldatastore(id.to_i)
     end
 
-    def import(indexes)
-        inner = ->(pair, clusters) {
-            pair.each do |ds|
-                create(ds[:one]) do |one_object|
-                    one_object.info
-                    id = one_object['ID']
+    def import(selected)
+        inner = ->(object, auth) {
+                one = ""
+                one << "VCENTER_HOST=\"#{auth[:host]}\"\n"
+                one << "VCENTER_USER=\"#{auth[:user]}\"\n"
+                one << "VCENTER_PASSWORD=\"#{auth[:pass]}\"\n"
 
-                    add_clusters(id, clusters)
-                end
-            end
+                rc = object.update(one, true)
         }
 
-        raise "the list is empty" if list_empty?
-        indexes.each do |index|
-            # select a datastore from the list
-            selected = get_element(index)
+        # Datastore info comes in a pair (SYS, IMG)
+        pair     = selected[:ds]
+        clusters = selected[:cluster]
 
-            # Datastore info comes in a pair (SYS, IMG)
-            inner.call(selected[:ds], selected[:cluster])
+        pair.each do |ds|
+            create(ds[:one]) do |one_object|
+                one_object.info
+                id = one_object['ID']
 
+                add_clusters(id, clusters)
+
+                inner.call(one_object, @vi_client.get_host_credentials)
+            end
         end
     end
 
