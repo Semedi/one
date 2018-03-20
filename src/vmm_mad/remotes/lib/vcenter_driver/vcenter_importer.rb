@@ -8,11 +8,14 @@ module VCenterDriver
         def initialize(one_client, vi_client)
             @vi_client  = vi_client
             @one_client = one_client
-            @list       = {}
-            @clusters   = {}
+
+            @list = {}
+            @info = {}
+            @info[:clusters] = {}
+            @out = []
         end
 
-        def self.new_(one_client, vi_client, type)
+        def self.new_child(one_client, vi_client, type)
             case type
             when "datastores"
                 VCenterDriver::DsImporter.new(one_client, vi_client)
@@ -21,22 +24,51 @@ module VCenterDriver
             end
         end
 
-        def process_import(indexes)
+        def one_str
+            return @one_class.to_s.split('::').last if @one_class
+
+            "OpenNebula object"
+        end
+
+        def stdout
+            @out.each do |msg|
+                puts msg
+                puts
+            end
+        end
+
+        def output
+            @out
+        end
+
+        def process_import(indexes, opts = {})
             raise "the list is empty" if list_empty?
             indexes = indexes.gsub(/\s+/, "").split(",")
 
             indexes.each do |index|
-                # select object from importer mem
-                selected = get_element(index)
+                begin
+                    @info[index] = {}
+                    @info[index][:opts] = opts[index]
 
-                import(selected)
+                    # select object from importer mem
+                    selected = get_element(index)
+
+                    id = import(selected)
+
+                    @out << "Success: #{one_str} with id #{id} created!"
+                rescue Exception => e
+                    @out << "Error: Couldn't import #{index} due to #{e.message}!"
+                    manage_error
+                end
             end
         end
 
+
         protected
-        ####################
+
+        ########################################
         # ABSTRACT INTERFACE
-        ####################
+        ########################################
 
         MESS = "missing method from parent"
 
@@ -45,12 +77,15 @@ module VCenterDriver
         def remove_default(id) raise MESS end
         def import(selected) raise MESS end
 
-        ###############
+        ########################################
 
         def create(info, &block)
             resource = VCenterDriver::VIHelper.new_one_item(@one_class)
+            message = "Error creating the OpenNebula resource"
+
             rc = resource.allocate(info)
-            VCenterDriver::VIHelper.check_error(rc, "Error creating resource")
+            VCenterDriver::VIHelper.check_error(rc, message)
+
             rc = block.call(resource)
         end
 
@@ -60,16 +95,25 @@ module VCenterDriver
 
         def get_element(ref)
             raise "the list is empty" if list_empty?
-            @list[ref] if @list[ref]
+
+            return @list[ref] if @list[ref]
+
+            raise "#{ref} not found!"
         end
 
         def add_clusters(one_id, clusters, &block)
             clusters.each do |cid|
-                @clusters[cid] ||= VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, cid.to_s, false)
+                @info[:clusters][cid] ||= VCenterDriver::VIHelper.one_item(OpenNebula::Cluster, cid.to_s, false)
                 rc =  add_cluster(cid.to_i, one_id.to_i)
                 VCenterDriver::VIHelper.check_error(rc, "add element to cluster")
             end
             remove_default(one_id)
         end
+    end
+
+    private
+
+    def manage_error
+        #this will manage the error
     end
 end
