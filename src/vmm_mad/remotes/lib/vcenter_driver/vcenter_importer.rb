@@ -9,11 +9,11 @@ module VCenterDriver
 
         MESS = "missing method from parent"
 
-        def get_list;    raise MESS end
+        def get_list;             raise MESS end
         def add_cluster(cid, eid) raise MESS end
-        def remove_default(id) raise MESS end
-        def import(selected) raise MESS end
-        def rollback; raise MESS end
+        def remove_default(id)    raise MESS end
+        def import(selected)      raise MESS end
+        def rollback;             raise MESS end
         ########################################
 
         public
@@ -64,7 +64,7 @@ module VCenterDriver
             { success: @info[:success], error: @info[:error] }
         end
 
-        def process_import(indexes, opts = {})
+        def process_import(indexes, opts = {}, &block)
             raise "the list is empty" if list_empty?
             indexes = indexes.gsub(/\s+/, "").split(",")
 
@@ -74,11 +74,11 @@ module VCenterDriver
             indexes.each do |index|
                 begin
                     @info[index] = {}
-                    @info[index][:opts] = opts[index]
-
-                    # select object from importer mem
                     selected = get_element(index)
 
+                    @info[index][:opts] = block_given? ? block.call(selected) : opts[index]
+
+                    # import the object
                     @info[:success] << import(selected)
                 rescue Exception => e
                     @info[:error] << index

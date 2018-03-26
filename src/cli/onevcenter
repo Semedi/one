@@ -139,7 +139,6 @@ cmd=CommandParser::CmdParser.new(ARGV) do
 
             importer.process_import(indexes)
 
-
             importer.stdout
         else
             puts "for the moment is not supported without the proper authentication"
