@@ -3,10 +3,21 @@ module VCenterDriver
         attr_accessor :list
 
         protected
+
+        class Raction
+            def initialize(object, method)
+                @object = object
+                @action = method
+            end
+
+            def apply
+                @object.method(@action).call
+            end
+        end
+
         ########################################
         # ABSTRACT INTERFACE
         ########################################
-
         MESS = "missing method from parent"
 
         def get_list;             raise MESS end
@@ -26,6 +37,7 @@ module VCenterDriver
 
             @list = {}
             @info = {}
+            @rollback = []
             @info[:clusters] = {}
         end
 
@@ -84,7 +96,7 @@ module VCenterDriver
                     @info[:error] << index
                     @info[index][:e] =  e
 
-                    rollback
+                    apply_rollback
                 end
             end
         end
@@ -122,5 +134,14 @@ module VCenterDriver
             end
             remove_default(one_id)
         end
+
+        def apply_rollback
+            if !@rollback.empty?
+                @rollback.each do |action|
+                    action.apply
+                end
+            end
+        end
     end
+
 end

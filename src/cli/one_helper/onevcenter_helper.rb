@@ -19,20 +19,39 @@ require 'one_helper'
 
 class OneVcenterHelper < OpenNebulaHelper::OneHelper
 
+    module VOBJECT
+      DATASTORE = 1
+      TEMPLATE = 2
+      NETWORK = 3
+      IMAGE = 4
+    end
+
     TABLE = {
-        "datastores" => {
+        VOBJECT::DATASTORE => {
             :struct  => ["DATASTORE_LIST", "DATASTORE"],
-            :columns => [:IMID, :REF, :VCENTER, :NAME, :CLUSTERS]
+            :columns => [:IMID, :REF, :VCENTER, :NAME, :CLUSTERS],
+            :dialogue => ->(arg){}
         },
-        "networks" => {
-            :struct  => ["NETWORK_LIST", "NETWORK"],
-            :columns => [:IMID, :REF, :VCENTER, :NAME, :CLUSTERS]
+        VOBJECT::TEMPLATE => {
+            :struct  => ["TEMPLATE_LIST", "TEMPLATE"],
+            :columns => [:IMID, :REF, :VCENTER, :NAME, :CLUSTERS],
+            :dialogue => ->(arg){ OneVcenterHelper.template_dialogue(arg) }
         },
-        "templates" => {
+        VOBJECT::NETWORK => {
             :struct  => ["NETWORK_LIST", "NETWORK"],
-            :columns => [:IMID, :REF, :VCENTER, :NAME]
+            :columns => [:IMID, :REF, :VCENTER, :NAME],
+            :dialogue => ->(arg){}
         }
     }
+
+    def set_object(type)
+        type = type.downcase
+        if (type == "datastores")
+            @vobject = VOBJECT::DATASTORE
+        elsif (type == "templates")
+            @vobject = VOBJECT::TEMPLATE
+        end
+    end
 
     def connection_options(object_name, options)
         if  options[:vuser].nil? || options[:vcenter].nil?
@@ -50,22 +69,62 @@ class OneVcenterHelper < OpenNebulaHelper::OneHelper
         }
     end
 
-    def cli_format(o, hash)
-        {TABLE[o][:struct].first => {TABLE[o][:struct].last => hash.values}}
+    def cli_format( hash)
+        {TABLE[@vobject][:struct].first => {TABLE[@vobject][:struct].last => hash.values}}
     end
 
     def list_object(options, list)
-        list = cli_format(options[:object], list)
-        table = format_list(options[:object])
+        list = cli_format(list)
+        table = format_list()
         table.show(list)
     end
 
-    def template_dialogue(t)
-    begin
+    def cli_dialogue(object_info)
+        return TABLE[@vobject][:dialogue].(object_info)
+    end
+
+    def format_list()
+        vcenter_object = @vobject
+        table = CLIHelper::ShowTable.new() do
+            column :IMID, "identifier for ...", :size=>4 do |d|
+                d[:import_id]
+            end
+
+            column :REF, "ref", :left, :size=>15 do |d|
+                d[:ref]
+            end
+
+            column :VCENTER, "vCenter", :left, :size=>20 do |d|
+                d[:vcenter]
+            end
+
+            column :NAME, "Name", :left, :size=>20 do |d|
+                d[:name] || d[:simple_name]
+            end
+
+            column :CLUSTERS, "CLUSTERS", :left, :size=>10 do |d|
+                d[:cluster].to_s
+            end
+
+            default(*TABLE[vcenter_object][:columns])
+        end
+
+        table
+    end
+
+    def self.template_dialogue(t)
+        rps_list = -> {
+            puts
+            t[:rp_list].each do |rp|
+                puts "      #{rp[:name]}"
+            end
+            puts
+        }
+
         # default opts
         opts = {
-            linked_clone: '',
-            copy: '',
+            linked_clone: '0',
+            copy: '0',
             name: '',
             folder: '',
             resourcepool: [],
@@ -105,11 +164,7 @@ class OneVcenterHelper < OpenNebulaHelper::OneHelper
 
                 STDOUT.print "\n    WARNING!!! The cloning operation can take some time"\
                              " depending on the size of disks.\n"
-            else
-                opts[:copy] = '0'
             end
-        else
-            opts[:linked_clone] = '0'
         end
 
         STDOUT.print "\n\n    Do you want to specify a folder where"\
@@ -123,127 +178,23 @@ class OneVcenterHelper < OpenNebulaHelper::OneHelper
         vcenter_vm_folder = STDIN.gets.strip
         opts[:folder] = vcenter_vm_folder
 
-        ## Add existing disks to template (OPENNEBULA_MANAGED)
-        STDOUT.print "\n    The existing disks and networks in the template"\
-                     " are being imported, \e[96mplease be patient...\e[39m\n"
+        STDOUT.print "\n\n    This template is currently set to "\
+            "launch VMs in the default resource pool."\
+            "\n    Press y to keep this behaviour, n to select"\
+            " a new resource pool or d to delegate the choice"\
+            " to the user ([y]/n/d)? "
 
-        # Resource Pools OPTION
-        rp_input = ""
-        rp_split = t[:rp].split("|")
-        if rp_split.size > 3
-            STDOUT.print "\n\n    This template is currently set to "\
-                "launch VMs in the default resource pool."\
-                "\n    Press y to keep this behaviour, n to select"\
-                " a new resource pool or d to delegate the choice"\
-                " to the user ([y]/n/d)? "
+        answer =  STDIN.gets.strip.downcase
 
-            answer =  STDIN.gets.strip.downcase
-
-            case answer
-            when 'd'
-                list_of_rp   = rp_split[-2]
-                default_rp   = rp_split[-1]
-                rp_input     = rp_split[0] + "|" + rp_split[1] + "|" +
-                                rp_split[2] + "|"
-
-                # Available list of resource pools
-                input_str = "    The list of available resource pools "\
-                            "to be presented to the user are "\
-                            "\"#{list_of_rp}\""
-                input_str+= "\n    Press y to agree, or input a comma"\
-                            " separated list of resource pools to edit "\
-                            "([y]/comma separated list) "
-                STDOUT.print input_str
-
-                answer = STDIN.gets.strip
-
-                if !answer.empty? && answer.downcase != 'y'
-                    rp_input += answer + "|"
-                else
-                    rp_input += rp_split[3] + "|"
-                end
-
-                # Default
-                input_str   = "    The default resource pool presented "\
-                                "to the end user is set to"\
-                                " \"#{default_rp}\"."
-                input_str+= "\n    Press y to agree, or input a new "\
-                            "resource pool ([y]/resource pool name) "
-                STDOUT.print input_str
-
-                answer = STDIN.gets.strip
-
-                if !answer.empty? && answer.downcase != 'y'
-                    rp_input += answer
-                else
-                    rp_input += rp_split[4]
-                end
-            when 'n'
-
-                list_of_rp   = rp_split[-2]
-
-                STDOUT.print "    The list of available resource pools is:\n\n"
-
-                index = 1
-                t[:rp_list].each do |r|
-                    list_str = "    - #{r[:name]}\n"
-                    index += 1
-                    STDOUT.print list_str
-                end
-
-                input_str = "\n    Please input the new default"\
-                            " resource pool name: "
-
-                STDOUT.print input_str
-
-                answer = STDIN.gets.strip
-
-                t[:one] << "VCENTER_RESOURCE_POOL=\"#{answer}\"\n"
-            end
+        case answer
+        when 'd'
+            opts[:type]='d'
+            rps_list.call
+        when 'n'
+            opts[:type]='n'
+            rps_list.call
         end
 
-        if !rp_input.empty?
-            t[:one] << "USER_INPUTS=["
-            t[:one] << "VCENTER_RESOURCE_POOL=\"#{rp_input}\"," if !rp_input.empty?
-            t[:one] = t[:one][0..-2]
-            t[:one] << "]"
-        end
-
-    rescue Interrupt => e
-        puts "\n"
-        exit 0 #Ctrl+C
-    rescue Exception => e
-        puts "whats happenning my brotha"
-    end
-
-    end
-
-
-    def format_list(type)
-        table = CLIHelper::ShowTable.new() do
-            column :IMID, "identifier for ...", :size=>4 do |d|
-                d[:import_id]
-            end
-
-            column :REF, "ref", :left, :size=>15 do |d|
-                d[:ref]
-            end
-
-            column :VCENTER, "vCenter", :left, :size=>20 do |d|
-                d[:vcenter]
-            end
-
-            column :NAME, "Name", :left, :size=>20 do |d|
-                d[:name] || d[:simple_name]
-            end
-
-            column :CLUSTERS, "CLUSTERS", :left, :size=>10 do |d|
-                d[:cluster].to_s
-            end
-
-            default(*TABLE[type][:columns])
-        end
-
-        table
+        return opts
     end
 end

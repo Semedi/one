@@ -3210,21 +3210,108 @@ class VmImporter < VCenterDriver::VcImporter
             raise "Could not get OpenNebula TemplatePool: #{tpool.message}"
         end
 
-        rs = dc_folder.get_unimported_templates(@vi_client, tpool)
+        @list = dc_folder.get_unimported_templates(@vi_client, tpool)
     end
 
-    def add_cluster(cid, eid)
-    end
+    def create_pools()
+        dpool = VCenterDriver::VIHelper.one_pool(OpenNebula::DatastorePool)
+        if dpool.respond_to?(:message)
+            raise "Could not get OpenNebula DatastorePool: #{dpool.message}"
+        end
+        ipool = VCenterDriver::VIHelper.one_pool(OpenNebula::ImagePool)
+        if ipool.respond_to?(:message)
+            raise "Could not get OpenNebula ImagePool: #{ipool.message}"
+        end
+        npool = VCenterDriver::VIHelper.one_pool(OpenNebula::VirtualNetworkPool)
+        if npool.respond_to?(:message)
+            raise "Could not get OpenNebula VirtualNetworkPool: #{npool.message}"
+        end
+        hpool = VCenterDriver::VIHelper.one_pool(OpenNebula::HostPool)
+        if hpool.respond_to?(:message)
+            raise "Could not get OpenNebula VirtualNetworkPool: #{hpool.message}"
+        end
 
-    def remove_default(id)
+        return dpool, ipool, npool, hpool
     end
 
     def import(selected)
+        opts = @info[selected[:ref]][:opts]
+        working_template = selected
+
+        vcenter = selected[:vcenter]
+        vc_uuid = selected[:vcenter_instance_uuid]
+        dc      = selected[:dc_name]
+
+        linked_clone     = opts[:linked_clone] == '1'
+        copy             = opts[:copy] == '1'
+        deploy_in_folder = !opts[:folder].empty?
+
+        res = {id: [], name: selected[:name]}
+
+        dpool, ipool, npool, hpool = create_pools
+
+        template = VCenterDriver::Template.new_from_ref(selected[:vcenter_ref], @vi_client)
+        # Linked clones and copy preparation
+        if linked_clone
+            if copy # reached this point we need to delete the template if something go wrong
+                error, template_copy_ref = selected[:template].create_template_copy(opts[:name])
+                raise "There is a problem creating creating your copy: #{error}" unless template_ref
+
+                template = VCenterDriver::Template.new_from_ref(template_copy_ref, @vi_client)
+                @rollback << Raction.new(template, :delete_template)
+
+                one_template = VCenterDriver::Template.get_xml_template(template, vc_uuid, @vi_client, vcenter, dc)
+                raise "There is a problem obtaining info from your template's copy" unless one_template
+                working_template = one_template
+            end
+
+            lc_error, use_lc = template.create_delta_disks
+            raise "Something was wront with create delta disk operation" if lc_error
+            working_template[:one] << "\nVCENTER_LINKED_CLONES=\"YES\"\n" if use_lc
+        end
+
+        working_template[:one] << "VCENTER_VM_FOLDER=\"#{opts[:folder]}\"\n" if deploy_in_folder
+
+        create(working_template[:one]) do |one_object|
+            @rollback << Raction.new(one_object, :delete)
+            one_object.info
+            id = one_object['ID']
+            res[:id] << id
+
+            type = {:object => "template", :id => id}
+            error, template_disks, allocated_images = template.import_vcenter_disks(vc_uuid, dpool, ipool, type)
+
+            # apply rollback
+            raise error if !error.empty?
+
+            allocated_images.reverse.each do |i|
+                @rollback.unshift(Raction.new(i, :delete))
+            end
+
+            working_template[:one] << template_disks
+
+            template_moref = template_copy_ref ? template_copy_ref : selected[:vcenter_ref]
+			wild = false
+			error, template_nics, allocated_nets = template.import_vcenter_nics(vc_uuid,
+                                                                            npool,
+                                                                            hpool,
+                                                                            vcenter,
+                                                                            template_moref,
+                                                                            wild,
+                                                                            false,
+                                                                            template["name"],
+                                                                            id,
+                                                                            dc)
+            raise error if !error.empty?
+            allocated_nets.reverse.each do |n|
+                @rollback.unshift(Raction.new(n, :delete))
+            end
+
+            one_object.update(working_template[:one])
+
+            return res
+        end
     end
 
-    def rollback
-    end
 end
-
-
 end # module VCenterDriver
