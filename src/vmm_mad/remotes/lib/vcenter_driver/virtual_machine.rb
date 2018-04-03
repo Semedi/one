@@ -3251,7 +3251,23 @@ class VmImporter < VCenterDriver::VcImporter
     end
 
     def rp_opts(type, rps)
-        "test"
+        str = ""
+
+        return str if (type == "default") || rps.empty?
+
+
+        if (type == "fixed")
+            str << "VCENTER_RESOURCE_POOL=\"#{rps}\"\n"
+        else
+            default = rps.first
+            rps_str = rps.join(',')
+
+            str << "USER_INPUTS=["
+            str << "VCENTER_RESOURCE_POOL=\"M|list|resource pool list|#{rps_str}|#{default}\""
+            str << "]"
+        end
+
+        return str
     end
 
     def import(selected)
@@ -3267,7 +3283,6 @@ class VmImporter < VCenterDriver::VcImporter
         deploy_in_folder = !opts[:folder].empty?
 
         res = {id: [], name: selected[:name]}
-
         dpool, ipool, npool, hpool = create_pools
 
         template = VCenterDriver::Template.new_from_ref(selected[:vcenter_ref], @vi_client)
@@ -3328,6 +3343,7 @@ class VmImporter < VCenterDriver::VcImporter
             end
             raise error if !error.empty?
 
+            working_template[:one] << rp_opts(opts[:type], opts[:resourcepool])
 
             one_object.update(working_template[:one])
         end

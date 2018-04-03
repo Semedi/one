@@ -114,11 +114,14 @@ class OneVcenterHelper < OpenNebulaHelper::OneHelper
 
     def self.template_dialogue(t)
         rps_list = -> {
+            return "" if t[:rp_list].empty?
             puts
             t[:rp_list].each do |rp|
                 puts "      #{rp[:name]}"
             end
             puts
+
+            return STDIN.gets.strip.downcase
         }
 
         # default opts
@@ -186,13 +189,19 @@ class OneVcenterHelper < OpenNebulaHelper::OneHelper
 
         answer =  STDIN.gets.strip.downcase
 
-        case answer
-        when 'd'
-            opts[:type]='d'
-            rps_list.call
-        when 'n'
-            opts[:type]='n'
-            rps_list.call
+        case answer.downcase
+        when 'd' || 'delegate'
+            opts[:type]='list'
+            puts "separate with commas ',' the list that you want to deleate:"
+
+            opts[:resourcepool] = rps_list.call.gsub(/\s+/, "").split(",")
+
+        when 'n' || 'no'
+            opts[:type]='fixed'
+            puts "choose the proper name"
+            opts[:resourcepool] = rps_list.call
+        else
+            opts[:type]='default'
         end
 
         return opts
