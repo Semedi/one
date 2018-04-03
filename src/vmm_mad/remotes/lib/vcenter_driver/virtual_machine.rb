@@ -16,7 +16,7 @@ class VirtualMachineFolder
     def fetch!
         VIClient.get_entities(@item, "VirtualMachine").each do |item|
             item_name = item._ref
-            @items[item_name.to_sym] = VirtualMachine.new(item)
+            @items[item_name.to_sym] = VirtualMachine.new_with_item(item)
         end
     end
 
@@ -930,6 +930,11 @@ class VirtualMachine < Template
         end
 
         @one_item
+    end
+
+    # set the vmware item directly to the vm
+    def set_item(item)
+        @item = item
     end
 
     # The OpenNebula host
@@ -3164,6 +3169,18 @@ class VirtualMachine < Template
     end
 
     # build a vcenterdriver virtual machine
+    # with the vmware item already linked
+    #
+    # @param vm_item the vmware VM item that it's going to be associated
+    #
+    # @return [vcenterdriver::vm] the virtual machine
+    def self.new_with_item(vm_item)
+        self.new(nil, nil, -1).tap do |vm|
+            vm.set_item(vm_item)
+        end
+    end
+
+    # build a vcenterdriver virtual machine
     # with the opennebula object linked
     #
     # @param vi_client [vi_client] the vcenterdriver client that allows the connection
@@ -3201,7 +3218,6 @@ class VmImporter < VCenterDriver::VcImporter
     end
 
     def get_list(&block)
-
         dc_folder = VCenterDriver::DatacenterFolder.new(@vi_client)
 
         # Get OpenNebula's templates pool
@@ -3234,6 +3250,10 @@ class VmImporter < VCenterDriver::VcImporter
         return dpool, ipool, npool, hpool
     end
 
+    def rp_opts(type, rps)
+        "test"
+    end
+
     def import(selected)
         opts = @info[selected[:ref]][:opts]
         working_template = selected
@@ -3251,11 +3271,12 @@ class VmImporter < VCenterDriver::VcImporter
         dpool, ipool, npool, hpool = create_pools
 
         template = VCenterDriver::Template.new_from_ref(selected[:vcenter_ref], @vi_client)
+
         # Linked clones and copy preparation
         if linked_clone
             if copy # reached this point we need to delete the template if something go wrong
                 error, template_copy_ref = selected[:template].create_template_copy(opts[:name])
-                raise "There is a problem creating creating your copy: #{error}" unless template_ref
+                raise "There is a problem creating creating your copy: #{error}" unless template_copy_ref
 
                 template = VCenterDriver::Template.new_from_ref(template_copy_ref, @vi_client)
                 @rollback << Raction.new(template, :delete_template)
@@ -3281,12 +3302,11 @@ class VmImporter < VCenterDriver::VcImporter
             type = {:object => "template", :id => id}
             error, template_disks, allocated_images = template.import_vcenter_disks(vc_uuid, dpool, ipool, type)
 
-            # apply rollback
-            raise error if !error.empty?
-
+            #rollback stack
             allocated_images.reverse.each do |i|
                 @rollback.unshift(Raction.new(i, :delete))
             end
+            raise error if !error.empty?
 
             working_template[:one] << template_disks
 
@@ -3302,15 +3322,17 @@ class VmImporter < VCenterDriver::VcImporter
                                                                             template["name"],
                                                                             id,
                                                                             dc)
-            raise error if !error.empty?
+            #rollback stack
             allocated_nets.reverse.each do |n|
                 @rollback.unshift(Raction.new(n, :delete))
             end
+            raise error if !error.empty?
+
 
             one_object.update(working_template[:one])
-
-            return res
         end
+
+        return res
     end
 
 end
