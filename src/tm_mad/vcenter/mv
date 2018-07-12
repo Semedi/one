@@ -45,6 +45,6 @@ if [ "$SRC" == "$DST" ]; then
     exit 0
 fi
 
-ruby $MIGRATE_DRIVER $HOST_DEST $HOST_ORIG $VMID $DSID
+#ruby $MIGRATE_DRIVER $HOST_DEST $HOST_ORIG $VMID $DSID
 
 exit 0
