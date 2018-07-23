@@ -32,6 +32,8 @@ require 'vcenter_driver'
 vm_ref           = ARGV[0]
 vc_cluster_name  = ARGV[-1]
 
+write_tmp('VMM', "dettach_DISK", vm_ref , "4: #{vc_cluster_name}")
+
 drv_action = OpenNebula::XMLElement.new
 drv_action.initialize_xml(Base64.decode64(STDIN.read), 'VMM_DRIVER_ACTION_DATA')
 

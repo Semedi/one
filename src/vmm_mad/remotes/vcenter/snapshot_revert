@@ -33,6 +33,8 @@ vm_ref          = ARGV[0]
 snap_id         = ARGV[1]
 vc_cluster_name = ARGV[3]
 
+write_tmp('VMM', "snap rever", vm_ref, snap_id, "3: #{vc_cluster_name}")
+
 host = VCenterDriver::VIHelper.find_by_name(OpenNebula::HostPool, vc_cluster_name)
 host_id = host['ID']
 

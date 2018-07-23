@@ -42,6 +42,8 @@ path               = ARGV[2]
 vmid               = ARGV[3]
 dsid               = ARGV[4]
 
+write_tmp('TM', "MKIMAGE", size , path, vmid, dsid)
+
 check_valid size, "size"
 check_valid path, "path"
 check_valid vmid, "vmid"

@@ -35,6 +35,7 @@ require 'opennebula'
 
 drv_action_enc = ARGV[0]
 id             = ARGV[1]
+write_tmp('DS', "EXPORT","drv_action_enc" , id)
 
 drv_action = OpenNebula::XMLElement.new
 drv_action.initialize_xml(Base64.decode64(drv_action_enc), 'DS_DRIVER_ACTION_DATA')
