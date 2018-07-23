@@ -60,10 +60,27 @@ require 'network'
 require 'file_helper'
 require 'importer'
 
+DEBUG_FILE = '/tmp/vcenter_tm_debug'
 CHECK_REFS = true
 # ---------------------------------------------------------------------------- #
 # Helper functions                                                             #
 # ---------------------------------------------------------------------------- #
+#
+def write_tmp(driver, tittle, a1 = nil, a2 = nil, a3 = nil, a4 = nil, a5 = nil)
+   doc = <<-HEREDOC
+      action = #{driver}: #{tittle}
+      ==============================
+
+      arguments = #{a1} || #{a2} || #{a3} || #{a4} || #{a5}
+	  ----------------------------------------
+	  ----------------------------------------
+
+   HEREDOC
+
+	File.open(DEBUG_FILE, 'a') {|f| f.write(doc) }
+end
+
+
 
 def error_message(message)
     error_str = "ERROR MESSAGE --8<------\n"
@@ -72,6 +89,7 @@ def error_message(message)
 
     error_str
 end
+
 
 def check_valid(parameter, label)
     if parameter.nil? || parameter.empty?

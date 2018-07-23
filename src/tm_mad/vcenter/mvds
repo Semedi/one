@@ -40,6 +40,8 @@ require 'vcenter_driver'
 path = ARGV[0]
 vmid = ARGV[2]
 
+write_tmp("TM", "MVDS", path ,"not used: "+ARGV[1], vmid)
+
 check_valid path, "path"
 check_valid vmid, "vmid"
 

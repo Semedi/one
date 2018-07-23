@@ -41,6 +41,7 @@ target_path  = ARGV[1]
 snap_id      = ARGV[2] #TODO snapshots?
 vmid         = ARGV[3]
 target_ds_id = ARGV[4]
+write_tmp('TM', "CPDS", src , target_path, snap_id, vmid, target_ds_id)
 
 check_valid src,"src"
 check_valid target_path,"target_path"

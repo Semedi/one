@@ -33,6 +33,8 @@ dfile        = ARGV[0]
 cluster_name = ARGV[1]
 vm_id        = ARGV[2]
 
+write_tmp('VMM', "deploy", dfile, cluster_name, vm_id)
+
 ## Helpers
 
 def deploy_id_valid?(deploy_id)

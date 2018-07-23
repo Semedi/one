@@ -42,6 +42,8 @@ dst          = ARGV[1]
 vm_id        = ARGV[2]
 source_ds_id = ARGV[3]
 
+write_tmp('TM', "CLONE",src , dst, vm_id, source_ds_id)
+
 check_valid src, "src"
 check_valid dst, "dst"
 check_valid vm_id, "vm_id"
@@ -80,6 +82,7 @@ target_path_escaped = VCenterDriver::FileHelper.get_img_name_from_path(src_path_
 target_path = VCenterDriver::FileHelper.unescape_path(target_path_escaped)
 
 begin
+
     vi_client     = VCenterDriver::VIClient.new_from_host(host_id)
 
     # Find disk info

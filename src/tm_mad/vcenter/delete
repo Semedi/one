@@ -90,6 +90,8 @@ path = ARGV[0]
 vmid = ARGV[1]
 dsid = ARGV[2]
 
+write_tmp('TM', "DELETE", path, vmid, dsid)
+
 check_valid path, "path"
 check_valid vmid, "vmid"
 check_valid dsid, "dsid"

@@ -34,6 +34,7 @@ require 'vcenter_driver'
 src          = ARGV[0]
 new_size     = ARGV[1]
 vmid         = ARGV[2]
+write_tmp('TM', "RESIZE", src , new_size, vmid)
 
 check_valid src,"src"
 check_valid new_size,"new_size"
