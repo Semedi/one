@@ -177,6 +177,7 @@ Request::ErrorCode VMTemplateClone::clone(int source_id, const string &name,
     {
         int img_id;
         int new_img_id;
+        float val;
 
         if ( (*disk)->get_image_id(img_id, att.uid) == 0)
         {
@@ -185,7 +186,7 @@ Request::ErrorCode VMTemplateClone::clone(int source_id, const string &name,
             oss << name << "-disk-" << ndisk;
 
             ec = img_clone.request_execute(img_id, oss.str(), -1,
-                    (*disk)->is_managed(), new_img_id, img_att);
+                    true, new_img_id, img_att);
 
             if ( ec != SUCCESS)
             {
@@ -194,6 +195,16 @@ Request::ErrorCode VMTemplateClone::clone(int source_id, const string &name,
                 att.resp_msg = "Failed to clone images: " + img_att.resp_msg;
 
                 goto error_images;
+            }
+
+            if ((*disk)->is_managed() == false)
+            {
+                Nebula& nd = Nebula::instance();
+                ImagePool * ipool  = nd.get_ipool();
+                Image * img = ipool->get(new_img_id);
+                img->erase_template_attribute("VCENTER_IMPORTED", val);
+                ipool->update(img);
+                img->unlock();
             }
 
             (*disk)->remove("IMAGE");
