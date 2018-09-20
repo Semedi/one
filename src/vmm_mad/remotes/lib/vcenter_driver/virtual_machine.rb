@@ -93,6 +93,40 @@ class VirtualMachine < VCenterDriver::Template
         def path
             @vc_res[:path_wo_ds]
         end
+
+        def ds
+            @vc_res[:datastore]
+        end
+
+        def ds_ref
+            @one_res['VCENTER_DS_REF']
+        end
+
+        def key
+            @vc_res[:key]
+        end
+
+        def prefix
+            @vc_res[:prefix]
+        end
+
+        def type
+            @vc_res[:type]
+        end
+
+        def file
+            path.split('/').last
+        end
+
+        def persistent?
+            true if @one_res['PERSISTENT']
+
+            false
+        end
+
+        def connected?
+            @vc_res[:device].connectable.connected
+        end
     end
 
     VM_PREFIX_DEFAULT = "one-$i-"
