@@ -74,6 +74,10 @@ class VirtualMachine < VCenterDriver::Template
             @vc_res  = vc_res
         end
 
+        def id
+            @id
+        end
+
         def managed?
             !(@one_res['OPENNEBULA_MANAGED'] && @one_res['OPENNEBULA_MANAGED'].downcase == "no")
         end
@@ -88,13 +92,28 @@ class VirtualMachine < VCenterDriver::Template
     class Disk < Resource
         def initialize(id, one_res, vc_res)
             super(id, one_res, vc_res)
+            @error_message = "vCenter device does not exist at the moment"
+        end
+
+        def self.one_disk(id, one_res)
+            self.new(id, one_res, nil)
+        end
+
+        def device
+            raise @error_message unless @vc_res
+
+            @vc_res[:device]
         end
 
         def path
+            raise @error_message unless @vc_res
+
             @vc_res[:path_wo_ds]
         end
 
         def ds
+            raise @error_message unless @vc_res
+
             @vc_res[:datastore]
         end
 
@@ -102,15 +121,22 @@ class VirtualMachine < VCenterDriver::Template
             @one_res['VCENTER_DS_REF']
         end
 
+
         def key
+            raise @error_message unless @vc_res
+
             @vc_res[:key]
         end
 
         def prefix
+            raise @error_message unless @vc_res
+
             @vc_res[:prefix]
         end
 
         def type
+            raise @error_message unless @vc_res
+
             @vc_res[:type]
         end
 
@@ -118,12 +144,71 @@ class VirtualMachine < VCenterDriver::Template
             path.split('/').last
         end
 
+        def is_cd?
+            !(@one_res["CLONE"].nil? || @one_res["CLONE"] == "YES")
+        end
+
+        def config(action)
+            raise @error_message unless @vc_res
+
+            reference = {}
+            reference[:key] = "opennebula.disk.#{@id}"
+
+            if action == :delete
+                reference[:value] = ""
+            elsif action == :attach
+                puts "not supported"
+            end
+
+            reference
+        end
+
         def persistent?
             @one_res['PERSISTENT'] == 'YES'
         end
 
+        def volatile?
+            @one_res["TYPE"] && @one_res["TYPE"].downcase == "fs"
+        end
+
         def connected?
+            raise @error_message unless @vc_res
+
             @vc_res[:device].connectable.connected
+        end
+
+        # Shrink not supported (nil). Size is in KB
+        def new_size
+            if @one_res["ORIGINAL_SIZE"]
+                original_size = @one_res["ORIGINAL_SIZE"].to_i
+                new_size      = @one_res["SIZE"].to_i
+
+                new_size = new_size > original_size ? new_size * 1024 : nil
+            end
+        end
+
+        def destroy
+            return if is_cd?
+
+            ds       = ds
+            img_path = path
+
+            begin
+                search_params = ds.get_search_params(ds['name'],
+                                                        File.dirname(img_path),
+                                                        File.basename(img_path))
+
+                search_task = ds['browser'].SearchDatastoreSubFolders_Task(search_params)
+                search_task.wait_for_completion
+
+                ds.delete_virtual_disk(img_path)
+                img_dir = File.dirname(img_path)
+                ds.rm_directory(img_dir) if ds.dir_empty?(img_dir)
+            rescue Exception => e
+                if !e.message.start_with?('FileNotFound')
+                    raise e.message # Ignore FileNotFound
+                end
+            end
         end
     end
 
@@ -697,14 +782,16 @@ class VirtualMachine < VCenterDriver::Template
     end
 
     def disk(index, opts = {})
+        index = index.to_s
+
         return @disks[index] if @disks[index] && opts[:sync].nil?
+
         one_disk = one_item.retrieve_xmlelements("TEMPLATE/DISK[DISK_ID='#{index}']").first rescue nil
 
         raise "disk #{index} not found" unless one_disk
 
         keys = opts[:keys].nil? ? get_unmanaged_keys : opts[:keys]
         vc_disks = opts[:disks].nil? ? get_vcenter_disks : opts[:disks]
-
         vc_disk = query_disk(one_disk, keys, vc_disks)
 
         @disks[index] = Disk.new(index.to_i, one_disk, vc_disk)
@@ -1600,8 +1687,38 @@ class VirtualMachine < VCenterDriver::Template
         end
     end
 
+    def ndetach_disk(disk)
+        spec_hash = {}
+        spec_hash[:extraConfig] = [disk.config(:delete)] unless disk.managed?
+        spec_hash[:deviceChange] = [{
+            :operation => :remove,
+            :device => disk.device
+        }]
 
-    # Detach DISK from VM
+        begin
+            @item.ReconfigVM_Task(:spec => spec_hash).wait_for_completion
+        rescue Exception => e
+            raise "Cannot detach DISK from VM: #{e.message}\n#{e.backtrace}"
+        end
+    end
+
+    def destroy_disk(disk)
+        one_vm = one_item
+
+        detachable= !(one_vm["LCM_STATE"].to_i == 11 && !disk.managed?)
+        detachable = detachable && has_snapshots?
+
+        return unless detachable
+
+        ndetach_disk(disk)
+        disk.destroy
+
+        @disks.delete(disk.id.to_s)
+    end
+
+    #DEPRECATED
+    #TODO: remove any reference to this method,
+    #       use ndetach disk instead
     def detach_disk(disk)
         spec_hash = {}
         img_path = ""
