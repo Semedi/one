@@ -61,11 +61,13 @@ begin
     vm = VCenterDriver::VirtualMachine.new(vi_client, vm_ref, vmid)
     disk = vm.disk(disk_id)
 
-    vm.one_item = one_vm
+    if disk
+        vm.one_item = one_vm
 
-    # Don't detach persistent disks if the VM has snapshots,
-    # or the instantiate to persistent is used
-    vm.ndetach_disk(disk) if !vm.has_snapshots? && !vm.instantiated_as_persistent?
+        # Don't detach persistent disks if the VM has snapshots,
+        # or the instantiate to persistent is used
+        vm.ndetach_disk(disk) if !vm.has_snapshots? && !vm.instantiated_as_persistent?
+    end
 
 rescue Exception => e
     message = "Error detaching virtual disk #{disk_id} from vm #{vmid}."\

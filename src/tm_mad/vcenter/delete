@@ -96,7 +96,7 @@ begin
         vm.remove_all_snapshots if vm.has_snapshots?
 
         vm.disks.each do |disk_id, disk|
-            vm.ndetach(disk) if disk.persistent?
+            vm.ndetach_disk(disk) if disk.persistent?
         end
 
         vm.destroy
