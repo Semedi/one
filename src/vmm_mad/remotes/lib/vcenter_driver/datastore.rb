@@ -121,7 +121,7 @@ class Storage
             one_image[:template] << "PATH=\"vcenter://#{image_path}\"\n"
             one_image[:template] << "TYPE=\"#{image_type}\"\n"
             one_image[:template] << "PERSISTENT=\"#{opts[:persistent]}\"\n"
-            one_image[:template] << "VCENTER_IMPORTED=\"YES\"\n"
+            one_image[:template] << "VCENTER_IMPORTED=\"YES\"\n" unless opts["DELETE_IMAGES"]
             one_image[:template] << "DEV_PREFIX=\"#{image_prefix}\"\n"
         else
             # Return the image XML if it already exists
@@ -555,7 +555,7 @@ class Datastore < Storage
         return output
     end
 
-    def get_images
+    def get_images(opts = {})
         img_templates = []
         images = {}
         imid = -1
@@ -634,7 +634,7 @@ class Datastore < Storage
                     one_image << "PATH=\"vcenter://#{image_path}\"\n"
                     one_image << "PERSISTENT=\"NO\"\n"
                     one_image << "TYPE=\"#{image_type}\"\n"
-                    one_image << "VCENTER_IMPORTED=\"YES\"\n"
+                    one_image << "VCENTER_IMPORTED=\"YES\"\n" unless opts["DELETE_IMAGES"]
                     one_image << "DEV_PREFIX=\"#{disk_prefix}\"\n"
 
                     # Check image hasn't already been imported
@@ -771,7 +771,7 @@ class ImageImporter < VCenterDriver::VcImporter
             raise "Datastore is not in the same vCenter instance provided in credentials"
         end
 
-        @list = ds.get_images
+        @list = ds.get_images(@conf)
     end
 
     def import(selected)

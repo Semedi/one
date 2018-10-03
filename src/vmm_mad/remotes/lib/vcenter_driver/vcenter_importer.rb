@@ -102,6 +102,7 @@ module VCenterDriver
         def initialize(one_client, vi_client)
             @vi_client  = vi_client
             @one_client = one_client
+            @conf = YAML::load(File.read("#{VAR_LOCATION}/remotes/vmm/vcenter/vcenterc")) rescue {}
 
             @list = {}
 

@@ -264,7 +264,7 @@ class Template
     # @param type [object] contains the type of the object(:object) and identificator(:id)
     # @return error, template_disks
     ########################################################################
-    def import_vcenter_disks(vc_uuid, dpool, ipool, type)
+    def import_vcenter_disks(vc_uuid, dpool, ipool, type, opts = {})
         disk_info = ""
         error = ""
 
@@ -303,7 +303,7 @@ class Template
                     break
                 end
 
-                opts = {:persistent => wild? ? "YES":"NO"}
+                opts.merge!({:persistent => wild? ? "YES":"NO"})
                 image_import = VCenterDriver::Datastore.get_image_import_template(disk, ipool, type, datastore_found["ID"], opts)
                 #Image is already in the datastore
                 if image_import[:one]
@@ -3561,7 +3561,7 @@ class VmImporter < VCenterDriver::VcImporter
             res[:id] << id
 
             type = {:object => "template", :id => id}
-            error, template_disks, allocated_images = template.import_vcenter_disks(vc_uuid, dpool, ipool, type)
+            error, template_disks, allocated_images = template.import_vcenter_disks(vc_uuid, dpool, ipool, type, @conf)
 
             if allocated_images
                 #rollback stack
