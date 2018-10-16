@@ -280,14 +280,15 @@ class VirtualMachine < VCenterDriver::Template
         volatile = disk['TYPE'] == 'fs'
 
         if volatile
-            dir = disk['VCENTER_DS_VOLATILE_DIR']
+            dir = disk['VCENTER_DS_VOLATILE_DIR'] || 'one-volatile'
             img_path = "#{dir}/#{@vm_id}/one-#{@vm_id}-#{disk_id}.vmdk"
         else
-            sppath = disk["SOURCE"].split(".")
+            source = disk['SOURCE'].gsub('%20', ' ')
+            folder = File.dirname(source)
+            ext    = File.extname(source)
+            file   = File.basename(source, ext)
 
-            raise "vm image path error!" if sppath.size != 2 || sppath.last != 'vmdk'
-
-            img_path = "#{sppath[0]}-#{@vm_id}-#{disk_id}.#{sppath[1]}"
+            img_path = "#{folder}/#{file}-#{@vm_id}-#{disk_id}#{ext}"
         end
 
         return img_path
@@ -755,13 +756,13 @@ class VirtualMachine < VCenterDriver::Template
 
     def query_disk(one_disk, keys, vc_disks)
         index    = one_disk['DISK_ID']
-        perst    = one_disk['PERSISTENT']
+        cloned   = one_disk["CLONE"].nil? || one_disk["CLONE"] == "YES"
 
         if keys["opennebula.disk.#{index}"]
             key =  keys["opennebula.disk.#{index}"].to_i
             query = vc_disks.select {|dev| key == dev[:key]}
         else
-            path = perst ? one_disk['SOURCE'] : disk_real_path(one_disk, index)
+            path = !cloned ? one_disk['SOURCE'] : disk_real_path(one_disk, index)
             query = vc_disks.select {|dev| path == dev[:path_wo_ds]}
         end
 
