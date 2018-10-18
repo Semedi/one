@@ -107,8 +107,19 @@ class VirtualMachine < VCenterDriver::Template
             self.new(id, one_res, nil)
         end
 
+        def self.vc_disk(vc_res)
+            @error_message = "one disk does not exist at the moment"
+            self.new(nil, nil, vc_res)
+        end
+
         def exists?
             return true if @vc_res
+
+            false
+        end
+
+        def detached?
+            return true unless @one_res
 
             false
         end
@@ -744,14 +755,8 @@ class VirtualMachine < VCenterDriver::Template
         @nics.size == get_one_nics.size
     end
 
-    def synced_disks?
-        @disks.size == get_one_disks.size
-    end
-
     def disks
-        return @disks if synced_disks?
-
-        sync_disks
+        info_disks
     end
 
     def no_remote_disks()
@@ -761,6 +766,23 @@ class VirtualMachine < VCenterDriver::Template
         end
 
         no_remote
+    end
+
+    def remote_disks()
+        remote = []
+        disks.each do |id, disk|
+            remote << disk if disk.detached?
+        end
+
+        remote
+    end
+
+    def disks_synced?
+        no_remote_disks().empty? && remote_disks().empty?
+    end
+
+    def sync_disks()
+        return if disks_synced?
     end
 
     def get_template_ref
@@ -796,7 +818,8 @@ class VirtualMachine < VCenterDriver::Template
     def sync_nics
     end
 
-    def sync_disks
+    def info_disks
+        @disks = {}
         keys = get_unmanaged_keys
         vc_disks  = get_vcenter_disks
         one_disks = get_one_disks
@@ -816,6 +839,8 @@ class VirtualMachine < VCenterDriver::Template
                 @disks[index] = Disk.one_disk(index.to_i, one_disk)
             end
         end
+
+        vc_disks.each {|d| @disks[d[:path_wo_ds]] = Disk.vc_disk(d)}
 
         @disks
     end
@@ -1055,7 +1080,6 @@ class VirtualMachine < VCenterDriver::Template
         extra_config
     end
 
-
     def reconfigure
         extraconfig   = []
         device_change = []
@@ -1179,7 +1203,7 @@ class VirtualMachine < VCenterDriver::Template
         }
 
         # Remove all NICs in the spawned VM, they'll be recreated
-	# using the configuration of the NICs defined in OpenNebula
+	    # using the configuration of the NICs defined in OpenNebula
         self["config.hardware.device"].each do |dv|
             if is_nic?(dv)
                 # B4897 - It was detached in poweroff, remove it from VM
@@ -1551,6 +1575,52 @@ class VirtualMachine < VCenterDriver::Template
         end
 
         return attach_disk_array, attach_spod_array, attach_spod_disk_info
+    end
+
+    # TODO
+    def detach_disks_specs()
+        detach_disk_array = []
+        extra_config      = []
+        keys = get_unmanaged_keys
+
+        remote_disks.each do |d|
+            source = VCenterDriver::FileHelper.escape_path(d.path)
+            persistent = VCenterDriver::VIHelper.find_persistent_image_by_source(source, ipool)
+
+            if !persistent
+                op = {operation: :remove, device: d.device}
+                op[:fileOperation] = :destroy unless d.type == "CDROM"
+                detach_disk_array << op
+            end
+
+            # Remove reference opennebula.disk if exist
+            keys.each do |key, value|
+                if value.to_i == d.key
+                    reference = {}
+                    reference[:key]   = key
+                    reference[:value] = ""
+                    extra_config << reference
+                    break
+                end
+            end
+        end
+
+        return detach_disks_array, extra_config
+    end
+
+    # TODO
+    def sync_detached_disks()
+        device_change, extra_config = detach_disks_specs
+
+        return if device_change.empty?
+
+        spec_hash = {}
+        spec_hash[:deviceChange] = device_change if !device_change.empty?
+        spec_hash[:extraConfig] = extra_config  if !extra_config.empty?
+
+        # Reconfigure for disks detached from original template
+        spec = RbVmomi::VIM.VirtualMachineConfigSpec(spec_hash)
+        @item.ReconfigVM_Task(:spec => spec).wait_for_completion
     end
 
     # TODO
