@@ -78,6 +78,14 @@ class VirtualMachine < VCenterDriver::Template
             @id
         end
 
+        def one_item
+            @one_res
+        end
+
+        def vc_item
+            @vc_res
+        end
+
         def managed?
             !(@one_res['OPENNEBULA_MANAGED'] && @one_res['OPENNEBULA_MANAGED'].downcase == "no")
         end
@@ -103,6 +111,10 @@ class VirtualMachine < VCenterDriver::Template
             return true if @vc_res
 
             false
+        end
+
+        def storpod?
+           @one_res["VCENTER_DS_REF"].start_with?('group-')
         end
 
         def device
@@ -740,6 +752,15 @@ class VirtualMachine < VCenterDriver::Template
         return @disks if synced_disks?
 
         sync_disks
+    end
+
+    def no_remote_disks()
+        no_remote = []
+        disks.each do |id, disk|
+            no_remote << disk unless disk.exists?
+        end
+
+        no_remote
     end
 
     def get_template_ref
@@ -1512,6 +1533,47 @@ class VirtualMachine < VCenterDriver::Template
         return onevm_disks_vector
     end
 
+    # TODO
+    def attach_disks_specs()
+        attach_disk_array = []
+        attach_spod_array = []
+        attach_spod_disk_info = {}
+
+        no_remote_disks.each_with_index do |disk, i|
+            if disk.storpod?
+                spec = calculate_add_disk_spec(disk.one_item, i)
+                attach_spod_array << spec
+                unit_ctrl = "#{spec[:device].controllerKey}-#{spec[:device].unitNumber}"
+                attach_spod_disk_info[unit_ctrl] = disk.id
+            else
+                attach_disk_array << calculate_add_disk_spec(disk.one_item, i)
+            end
+        end
+
+        return attach_disk_array, attach_spod_array, attach_spod_disk_info
+    end
+
+    # TODO
+    # calling this method should reconfigure the machine adding one disks
+    # that are not existing in vCenter
+    def sync_attached_disks()
+        spec_hash     = {}
+        device_change = []
+
+        device_change_ds, device_change_spod, device_change_spod_ids = attach_disks_specs
+        device_change += device_change_ds
+
+        # Create volatile disks in StorageDRS if any
+        if !device_change_spod.empty?
+            spec_hash[:extraConfig] = create_storagedrs_disks(device_change_spod, device_change_spod_ids)
+        end
+
+        # Common reconfigure task
+        spec_hash[:deviceChange] = device_change
+        spec = RbVmomi::VIM.VirtualMachineConfigSpec(spec_hash)
+        @item.ReconfigVM_Task(:spec => spec).wait_for_completion
+    end
+
     def device_attach_disks(onevm_disks_vector, vc_disks)
 
         disks = one_item.retrieve_xmlelements("TEMPLATE/DISK")
@@ -1994,6 +2056,27 @@ class VirtualMachine < VCenterDriver::Template
             @item.ReconfigVM_Task(:spec => resize_hash).wait_for_completion
         end
     end
+
+    #TODO
+    def resize_disk(disk_id)
+        disk = self.disk(disk_id)
+        new_size = disk.new_size
+
+        return unless new_size
+
+        if !disk.exists?
+        end
+
+        # TODO:
+        #   not existings disks
+
+        # Edit capacity setting new size in KB
+        d = disk.device
+        d.capacityInKB = new_size
+        resize_hash[:deviceChange] = [{ :device => d, :operation => :edit }]
+        @item.ReconfigVM_Task(:spec => resize_hash).wait_for_completion
+    end
+
 
     def has_snapshots?
         self['rootSnapshot'] && !self['rootSnapshot'].empty?
