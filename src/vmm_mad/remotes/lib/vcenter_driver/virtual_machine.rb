@@ -117,16 +117,28 @@ class VirtualMachine < VCenterDriver::Template
             self.new(nil, nil, vc_res)
         end
 
+        def one?
+            return true if @one_res
+
+            false
+        end
+
         def exists?
             return true if @vc_res
 
             false
         end
 
-        def detached?
-            return true unless @one_res
+        def synced?
+            one? && exists?
+        end
 
-            false
+        def unsynced?
+            !synced?
+        end
+
+        def detached?
+            !one?
         end
 
         def storpod?
@@ -772,13 +784,12 @@ class VirtualMachine < VCenterDriver::Template
         info_disks
     end
 
-    def disks_each(filter)
-        case fiter
-        when :one
-        end
-
-
+    def disks_each(condition)
         disks.each do |id, disk|
+            next unless disk.method(condition).call
+
+            yield disk
+        end
     end
 
     def no_remote_disks()
@@ -801,10 +812,6 @@ class VirtualMachine < VCenterDriver::Template
 
     def disks_synced?
         no_remote_disks().empty? && remote_disks().empty?
-    end
-
-    def sync_disks()
-        return if disks_synced?
     end
 
     def get_template_ref
@@ -1672,6 +1679,8 @@ class VirtualMachine < VCenterDriver::Template
 
         spec = RbVmomi::VIM.VirtualMachineConfigSpec(spec_hash)
         @item.ReconfigVM_Task(:spec => spec).wait_for_completion
+
+        info_disks
     end
 
     def device_attach_disks(onevm_disks_vector, vc_disks)
@@ -2160,9 +2169,9 @@ class VirtualMachine < VCenterDriver::Template
     # TODO
     def dresize_unmanaged_disks
         spec = {deviceChange: []}
-        disks.each do |id, d|
-            resizable = !d.managed? && d.new_size
-            spec[:deviceChange] << d.config(:resize) if resizable
+        disks_each(:one?) do |d|
+            next unless !d.managed? && d.new_size
+            spec[:deviceChange] << d.config(:resize)
         end
 
         @item.ReconfigVM_Task(:spec => spec).wait_for_completion
