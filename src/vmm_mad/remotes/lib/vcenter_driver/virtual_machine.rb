@@ -172,7 +172,6 @@ class VirtualMachine < VCenterDriver::Template
             @one_res['VCENTER_DS_REF']
         end
 
-
         def key
             raise @error_message unless exists?
 
@@ -234,8 +233,20 @@ class VirtualMachine < VCenterDriver::Template
             @vc_res[:device].connectable.connected
         end
 
+        def set_size(size)
+            size=size.to_i
+
+            if @one_res["ORIGINAL_SIZE"] && @one_res["ORIGINAL_SIZE"].to_i >= size
+                raise "'disk-resize' cannot decrease the disk's size"
+            end
+
+            @size = size * 1024
+        end
+
         # Shrink not supported (nil). Size is in KB
         def new_size
+            return @size if @size
+
             if @one_res["ORIGINAL_SIZE"]
                 original_size = @one_res["ORIGINAL_SIZE"].to_i
                 new_size      = @one_res["SIZE"].to_i
@@ -2171,7 +2182,7 @@ class VirtualMachine < VCenterDriver::Template
     #TODO
     def resize_disk(disk)
         sync_disks unless disk.exists?
-        @item.ReconfigVM_Task(spec: {deviceChange: [disk.resize_spec]})
+        @item.ReconfigVM_Task(spec: {deviceChange: [disk.config(:resize)]})
     end
 
     def has_snapshots?
