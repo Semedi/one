@@ -233,6 +233,10 @@ class VirtualMachine < VCenterDriver::Template
             @vc_res[:device].connectable.connected
         end
 
+        def get_size()
+            @size if @size
+        end
+
         def set_size(size)
             size=size.to_i
 
@@ -240,18 +244,18 @@ class VirtualMachine < VCenterDriver::Template
                 raise "'disk-resize' cannot decrease the disk's size"
             end
 
-            @size = size * 1024
+            @size = size
         end
 
         # Shrink not supported (nil). Size is in KB
         def new_size
-            return @size if @size
+            return @size * 1024 if @size
 
             if @one_res["ORIGINAL_SIZE"]
-                original_size = @one_res["ORIGINAL_SIZE"].to_i
-                new_size      = @one_res["SIZE"].to_i
+                osize = @one_res["ORIGINAL_SIZE"].to_i
+                nsize = @one_res["SIZE"].to_i
 
-                new_size = new_size > original_size ? new_size * 1024 : nil
+                new_size = nsize > osize ? nsize * 1024 : nil
             end
         end
 
@@ -1903,7 +1907,7 @@ class VirtualMachine < VCenterDriver::Template
         one_vm = one_item
 
         detachable= !(one_vm["LCM_STATE"].to_i == 11 && !disk.managed?)
-        detachable = detachable && !has_snapshots?
+        detachable = detachable && !has_snapshots? && disk.exists?
 
         return unless detachable
 
@@ -2181,8 +2185,16 @@ class VirtualMachine < VCenterDriver::Template
 
     #TODO
     def resize_disk(disk)
-        sync_disks unless disk.exists?
-        @item.ReconfigVM_Task(spec: {deviceChange: [disk.config(:resize)]})
+        if !disk.exists?
+            size = disk.get_size
+            sync_disks
+            disk = disk(disk.id)
+            disk.set_size(size)
+        end
+
+        spec = {deviceChange: [disk.config(:resize)]}
+
+        @item.ReconfigVM_Task(spec: spec).wait_for_completion
     end
 
     def has_snapshots?

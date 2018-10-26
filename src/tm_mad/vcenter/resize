@@ -57,7 +57,6 @@ begin
     end
 
     vi_client = VCenterDriver::VIClient.new_from_host(host_id)
-
     vm = VCenterDriver::VirtualMachine.new(vi_client, vm_ref, vmid )
 
     # Cannot resize if VM has snapshots
