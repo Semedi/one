@@ -1837,17 +1837,13 @@ class VirtualMachine < VCenterDriver::Template
     end
 
     # Attach DISK to VM (hotplug)
-    def attach_disk
-        spec_hash = {}
-        disk = nil
+    def attach_disk(disk)
+        spec_hash     = {}
         device_change = []
 
         # Extract unmanaged_keys
         unmanaged_keys = get_unmanaged_keys
         vc_disks = get_vcenter_disks
-
-        # Extract disk from driver action
-        disk = one_item.retrieve_xmlelements("TEMPLATE/DISK[ATTACH='YES']").first
 
         # Check if we're dealing with a StoragePod SYSTEM ds
         storpod = disk["VCENTER_DS_REF"].start_with?('group-')
@@ -1856,10 +1852,15 @@ class VirtualMachine < VCenterDriver::Template
         raise "DISK is already connected to VM" if disk_attached_to_vm(disk, unmanaged_keys, vc_disks)
 
         # Generate vCenter spec and reconfigure VM
-        device_change << calculate_add_disk_spec(disk)
+        add_spec = calculate_add_disk_spec(disk)
+        device_change << add_spec
         raise "Could not generate DISK spec" if device_change.empty?
 
+        extra_key   = "opennebula.mdisk.#{disk["DISK_ID"]}"
+        extra_value = "#{add_spec[:device].key}"
+
         spec_hash[:deviceChange] = device_change
+        spec_hash[:extraConfig]  = [{key: extra_key, value: extra_value }]
         spec = RbVmomi::VIM.VirtualMachineConfigSpec(spec_hash)
 
         begin
@@ -2016,6 +2017,33 @@ class VirtualMachine < VCenterDriver::Template
         return device_found
     end
 
+    def get_key(type)
+        @used_keys = [] unless @used_keys
+
+        if type == "CDROM"
+            bound = "is_cdrom?"
+        else
+            bound = "is_disk?"
+        end
+
+        used = @used_keys
+        last = nil
+        @item.config.hardware.device.each do |dev|
+            used << dev.key
+            next unless send(bound, dev)
+            last = dev.key
+        end
+
+        loop do
+            last+=1
+            break if !used.include?(last)
+        end
+
+        @used_keys << last
+
+        last
+    end
+
     def calculate_add_disk_spec(disk, position=0)
         img_name_escaped = VCenterDriver::FileHelper.get_img_name(
                                 disk,
@@ -2049,7 +2077,7 @@ class VirtualMachine < VCenterDriver::Template
 
             device = RbVmomi::VIM::VirtualCdrom(
                 :backing       => vmdk_backing,
-                :key           => -1,
+                :key           => get_key(type),
                 :controllerKey => controller.key,
                 :unitNumber    => unit_number,
 
@@ -2067,7 +2095,6 @@ class VirtualMachine < VCenterDriver::Template
 
         else
             # TYPE is regular disk (not CDROM)
-
             controller, unit_number = find_free_controller(position)
 
             storpod = disk["VCENTER_DS_REF"].start_with?('group-')
@@ -2090,7 +2117,7 @@ class VirtualMachine < VCenterDriver::Template
               :backing       => vmdk_backing,
               :capacityInKB  => size_kb,
               :controllerKey => controller.key,
-              :key           => (-1 - position),
+              :key           => get_key(type),
               :unitNumber    => unit_number
             )
 
