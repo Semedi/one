@@ -1418,7 +1418,6 @@ class VirtualMachine < VCenterDriver::Template
             boot_opts = set_boot_order(deploy[:boot])
         end
 
-
         # changes from sync_disks
         device_change += disks[:deviceChange] if disks[:deviceChange]
         extraconfig   += disks[:extraConfig]  if disks[:extraConfig]
@@ -1749,9 +1748,11 @@ class VirtualMachine < VCenterDriver::Template
     # try to get specs for new attached disks
     # using disk_each method with :no_exists? condition
     def attach_disks_specs()
-        attach_disk_array = []
-        attach_spod_array = []
+        attach_disk_array     = []
+        extraconfig           = []
+        attach_spod_array     = []
         attach_spod_disk_info = {}
+
 
         pos = {:ide => 0, :scsi => 0}
         disks_each(:no_exists?) do |disk|
@@ -1763,14 +1764,23 @@ class VirtualMachine < VCenterDriver::Template
                 unit_ctrl = "#{spec[:device].controllerKey}-#{spec[:device].unitNumber}"
                 attach_spod_disk_info[unit_ctrl] = disk.id
             else
-                attach_disk_array << calculate_add_disk_spec(disk.one_item, pos[k])
+                aspec = calculate_add_disk_spec(disk.one_item, pos[k])
+                extra_key   = "opennebula.mdisk.#{disk["DISK_ID"]}"
+                extra_value = "#{aspec[:device].key}"
+
+                attach_disk_array << aspec
+                extraconfig << {key: extra_key, value: extra_value }
             end
 
             pos[k]+=1
         end
 
 
-        return attach_disk_array, attach_spod_array, attach_spod_disk_info
+        { disks:       attach_disk_array,
+          spods:       attach_spod_array,
+          spod_info:   attach_spod_disk_info,
+          extraconfig: extraconfig
+        }
     end
 
     # try to get specs for detached disks
@@ -1820,13 +1830,16 @@ class VirtualMachine < VCenterDriver::Template
             @item.ReconfigVM_Task(:spec => detach_op).wait_for_completion if perform
         end
 
-        device_change, device_change_spod, device_change_spod_ids = attach_disks_specs
+        a_specs = attach_disks_specs
 
-        if !device_change_spod.empty?
-            spec_hash[:extraConfig] = create_storagedrs_disks(device_change_spod, device_change_spod_ids)
+        if !a_specs[:spods].empty?
+            spec_hash[:extraConfig] = create_storagedrs_disks(a_specs[:spods], a_specs[:spod_info])
         end
 
-        spec_hash[:deviceChange] = device_change unless device_change.empty?
+        if !a_specs[:disks].empty?
+            spec_hash[:deviceChange] = a_specs[:disks]
+            spec_hash[:extraConfig] =  a_specs[:extraconfig]
+        end
 
         return spec_hash unless execute
 
