@@ -267,7 +267,13 @@ class VirtualMachine < VCenterDriver::Template
             config = {}
 
             if action == :delete
-                config[:key] = "opennebula.disk.#{@id}"
+                if managed?
+                    key = "opennebula.mdisk.#{@id}"
+                else
+                    key = "opennebula.disk.#{@id}"
+                end
+
+                config[:key] = key
                 config[:value] = ""
             elsif action == :resize
                 if new_size
@@ -547,10 +553,11 @@ class VirtualMachine < VCenterDriver::Template
     def get_unmanaged_keys
         unmanaged_keys = {}
         @item.config.extraConfig.each do |val|
-             if val[:key].include?("opennebula.disk")
-                 unmanaged_keys[val[:key]] = val[:value]
-             end
+            u = val[:key].include?("opennebula.disk")
+            m = val[:key].include?("opennebula.mdisk")
+            unmanaged_keys[val[:key]] = val[:value] if u || m
         end
+
         return unmanaged_keys
     end
 
@@ -1765,7 +1772,7 @@ class VirtualMachine < VCenterDriver::Template
                 attach_spod_disk_info[unit_ctrl] = disk.id
             else
                 aspec = calculate_add_disk_spec(disk.one_item, pos[k])
-                extra_key   = "opennebula.mdisk.#{disk["DISK_ID"]}"
+                extra_key   = "opennebula.mdisk.#{disk.one_item["DISK_ID"]}"
                 extra_value = "#{aspec[:device].key}"
 
                 attach_disk_array << aspec
@@ -1791,7 +1798,7 @@ class VirtualMachine < VCenterDriver::Template
         keys = get_unmanaged_keys.invert
         ipool = VCenterDriver::VIHelper.one_pool(OpenNebula::ImagePool)
         disks_each(:detached?) do |d|
-            key = d.key
+            key = d.key.to_s
             source = VCenterDriver::FileHelper.escape_path(d.path)
             persistent = VCenterDriver::VIHelper.find_persistent_image_by_source(source, ipool)
 
@@ -1821,7 +1828,6 @@ class VirtualMachine < VCenterDriver::Template
 
         spec_hash       = {}
         device_change   = []
-        extra_config    = []
 
         if option == :all
             detach_op = {}
@@ -1838,7 +1844,7 @@ class VirtualMachine < VCenterDriver::Template
 
         if !a_specs[:disks].empty?
             spec_hash[:deviceChange] = a_specs[:disks]
-            spec_hash[:extraConfig] =  a_specs[:extraconfig]
+            spec_hash[:extraConfig]  = a_specs[:extraconfig]
         end
 
         return spec_hash unless execute
@@ -1975,7 +1981,7 @@ class VirtualMachine < VCenterDriver::Template
         return unless disk.exists?
 
         spec_hash = {}
-        spec_hash[:extraConfig] = [disk.config(:delete)] unless disk.managed?
+        spec_hash[:extraConfig] = [disk.config(:delete)]
         spec_hash[:deviceChange] = [{
             :operation => :remove,
             :device => disk.device
@@ -2035,26 +2041,27 @@ class VirtualMachine < VCenterDriver::Template
 
         if type == "CDROM"
             bound = "is_cdrom?"
+            key   = 3000
         else
             bound = "is_disk?"
+            key   = 2000
         end
 
         used = @used_keys
-        last = nil
         @item.config.hardware.device.each do |dev|
             used << dev.key
             next unless send(bound, dev)
-            last = dev.key
+            key = dev.key
         end
 
         loop do
-            last+=1
-            break if !used.include?(last)
+            break if !used.include?(key)
+            key+=1
         end
 
-        @used_keys << last
+        @used_keys << key
 
-        last
+        key
     end
 
     def calculate_add_disk_spec(disk, position=0)
