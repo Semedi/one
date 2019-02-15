@@ -550,7 +550,7 @@ class VirtualMachine < VCenterDriver::Template
         @vi_client.vim.serviceContent.about.instanceUuid
     end
 
-    def get_unmanaged_keys
+    def get_disk_keys
         unmanaged_keys = {}
         @item.config.extraConfig.each do |val|
             u = val[:key].include?("opennebula.disk")
@@ -995,13 +995,25 @@ class VirtualMachine < VCenterDriver::Template
     #
     # @return [vCenter_disk] the proper disk
     def query_disk(one_disk, keys, vc_disks)
-        index    = one_disk['DISK_ID']
-        cloned   = one_disk["CLONE"].nil? || one_disk["CLONE"] == "YES"
+        index     = one_disk['DISK_ID']
+        cloned    = one_disk["CLONE"].nil? || one_disk["CLONE"] == "YES"
+        unmanaged = "opennebula.disk.#{index}"
+        managed   = "opennebula.mdisk.#{index}"
 
-        if keys["opennebula.disk.#{index}"]
-            key =  keys["opennebula.disk.#{index}"].to_i
+        if keys[managed]
+            key  = keys[managed].to_i
+        elsif keys[unmanaged]
+            key  = keys[unmanaged].to_i
+        end
+
+        if key
             query = vc_disks.select {|dev| key == dev[:key]}
         else
+            error = 'disk metadata is corrupted and you have snapshots'
+            if has_snapshots?
+                raise error
+            end
+
             path = !cloned ? one_disk['SOURCE'] : disk_real_path(one_disk, index)
             query = vc_disks.select {|dev| path == dev[:path_wo_ds]}
         end
@@ -1069,7 +1081,7 @@ class VirtualMachine < VCenterDriver::Template
     def info_disks
         @disks = {}
 
-        keys = get_unmanaged_keys
+        keys = get_disk_keys
         vc_disks  = get_vcenter_disks
         one_disks = get_one_disks
 
@@ -1142,7 +1154,7 @@ class VirtualMachine < VCenterDriver::Template
 
         raise "disk #{index} not found" unless one_disk
 
-        keys = opts[:keys].nil? ? get_unmanaged_keys : opts[:keys]
+        keys = opts[:keys].nil? ? get_disk_keys : opts[:keys]
         vc_disks = opts[:disks].nil? ? get_vcenter_disks : opts[:disks]
         vc_disk = query_disk(one_disk, keys, vc_disks)
 
@@ -1795,7 +1807,7 @@ class VirtualMachine < VCenterDriver::Template
     def detach_disks_specs()
         detach_disk_array = []
         extra_config      = []
-        keys = get_unmanaged_keys.invert
+        keys = get_disk_keys.invert
         ipool = VCenterDriver::VIHelper.one_pool(OpenNebula::ImagePool)
         disks_each(:detached?) do |d|
             key = d.key.to_s
@@ -1861,7 +1873,7 @@ class VirtualMachine < VCenterDriver::Template
         device_change = []
 
         # Extract unmanaged_keys
-        unmanaged_keys = get_unmanaged_keys
+        unmanaged_keys = get_disk_keys
         vc_disks = get_vcenter_disks
 
         # Check if we're dealing with a StoragePod SYSTEM ds
@@ -2559,8 +2571,9 @@ class VirtualMachine < VCenterDriver::Template
         @item.PowerOffVM_Task.wait_for_completion
     end
 
-    def remove_all_snapshots
-        @item.RemoveAllSnapshots_Task.wait_for_completion
+    def remove_all_snapshots(consolidate = true)
+        @item.RemoveAllSnapshots_Task({consolidate: consolidate}).wait_for_completion
+        info_disks
     end
 
     def vm_tools?
