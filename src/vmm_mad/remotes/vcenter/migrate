@@ -45,9 +45,6 @@ begin
     vm        = VCenterDriver::VirtualMachine.new(vi_client, vm_ref, vm_id)
     new_ds    = dst_ds != src_ds
 
-    error = !vm.disks_each(:managed?).empty? && new_ds
-    raise 'live datastore migration with managed disk is not supported' if error
-
     if new_ds
         VCenterDriver::VirtualMachine
             .migrate_routine(vm_id, src_host, dst_host, true, dst_ds)
